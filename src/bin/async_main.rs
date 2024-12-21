@@ -17,16 +17,17 @@
 #![no_std]
 #![no_main]
 
+use defmt::info;
 use embassy_executor::Spawner;
-use {defmt_rtt as _, esp_backtrace as _};
 use esp_hal::{
     dma::{Dma, DmaPriority},
     dma_buffers,
     i2s::master::{DataFormat, I2s, Standard},
     prelude::*,
     timer::timg::TimerGroup,
+    uart::{Config, Uart},
 };
-use defmt::info;
+use {defmt_rtt as _, esp_backtrace as _};
 
 #[esp_hal_embassy::main]
 async fn main(_spawner: Spawner) {
@@ -39,18 +40,22 @@ async fn main(_spawner: Spawner) {
     let dma = Dma::new(peripherals.DMA);
     let dma_channel = dma.channel0;
 
-    let (rx_buffer, rx_descriptors, _, tx_descriptors) = dma_buffers!(4092 * 4, 0);
+    let (rx_buffer, rx_descriptors, _, tx_descriptors) = dma_buffers!(4096 * 8, 0);
 
     let i2s = I2s::new(
         peripherals.I2S0,
         Standard::Philips,
         DataFormat::Data16Channel16,
-        44100u32.Hz(),
+        41000u32.Hz(),
         dma_channel.configure(false, DmaPriority::Priority0),
         rx_descriptors,
         tx_descriptors,
     )
     .into_async();
+
+    // For 24-bit data in 32-bit word:
+    // [0000_0000][DDDD_DDDD][DDDD_DDDD][DDDD_DDDD]
+    // Where D is data bits and 0 is padding
 
     let i2s = i2s.with_mclk(peripherals.GPIO0);
 
@@ -62,20 +67,33 @@ async fn main(_spawner: Spawner) {
         .build();
 
     let buffer = rx_buffer;
+
+    let uart_config = Config::default().baudrate(921_600);
+    let uart1 = Uart::new_with_config(
+        peripherals.UART1,
+        uart_config,
+        peripherals.GPIO18,
+        peripherals.GPIO17,
+    )
+    .unwrap();
+
+    let (mut _uart1_rx, _uart1_tx) = uart1.split();
+
     info!("Start");
 
-    let mut data = [0u8; 5000];
+    let mut data = [0u8; 4096];
     let mut transaction = i2s_rx.read_dma_circular_async(buffer).unwrap();
     loop {
-        let avail = transaction.available().await.unwrap();
-        info!("available {}", avail);
+        let _avail = transaction.available().await.unwrap();
+        // info!("available {}", avail);
 
         let count = transaction.pop(&mut data).await.unwrap();
-        info!(
-            "got {} bytes, {:02x}..{:02x}",
-            count,
-            &data[..10],
-            &data[count - 10..count]
-        );
+
+        // uart0_tx.write_bytes(&data).unwrap();
+        for i in (0..10.min(count)).step_by(4) {
+            let sample = i16::from_le_bytes([data[i], data[i + 1]]);
+            let normalized = sample as f32 / i16::MAX as f32;
+            info!("sample: {}", normalized);
+        }
     }
 }

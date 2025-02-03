@@ -26,7 +26,6 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use micro_dsp::process_frame;
-use totone::test_data::generate_sine_samples_i16;
 use {defmt_rtt as _, esp_backtrace as _};
 
 fn init_heap() {
@@ -100,25 +99,24 @@ async fn main(_spawner: Spawner) {
 
         let count = transaction.pop(&mut data).await.unwrap();
 
-        // get the first 1024 samples if they are available
        
         if count >= FFT_SIZE * BYTES_PER_SAMPLE {
-            // let mut samples = [0i16; FFT_SIZE];
-            // for (i, chunk) in data
-            //     .chunks_exact(BYTES_PER_SAMPLE)
-            //     .enumerate()
-            //     .take(FFT_SIZE)
-            // {
-            //     samples[i] = i16::from_be_bytes([chunk[0], chunk[1]]);
-            // }
-            let samples = generate_sine_samples_i16();
+            let mut samples: [i16; FFT_SIZE] = [0i16; FFT_SIZE];
+            for (i, chunk) in data
+                .chunks_exact(4)
+                .enumerate()
+                .take(FFT_SIZE)
+            {
+                samples[i] = i16::from_be_bytes([chunk[0], chunk[1]]);
+            }
 
             let fft_data = process_frame(&samples).unwrap();
-            // show the 10 values around the eleventh bin
             info!(
-                "FFT: {:?}",
-                fft_data[6..15]
+                "FFT: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                fft_data[6], fft_data[7], fft_data[8], fft_data[9], fft_data[10], fft_data[11], fft_data[12], fft_data[13], fft_data[14]
             );
+
+            // info!("Got {} bytes", count);
             
         }
     }

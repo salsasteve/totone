@@ -14,21 +14,19 @@
 #![no_std]
 #![no_main]
 
+use core::mem::MaybeUninit;
 use defmt::info;
 use embassy_executor::Spawner;
+use esp_alloc as _;
 use esp_hal::{
     dma::{Dma, DmaPriority},
     dma_buffers,
     i2s::master::{DataFormat, I2s, Standard},
     prelude::*,
-    timer::timg::TimerGroup
+    timer::timg::TimerGroup,
 };
-use esp_alloc as _;
+use micro_dsp::process_frame;
 use {defmt_rtt as _, esp_backtrace as _};
-use micro_dsp::normalize_samples;
-use microdsp::common::apply_window_function;
-use core::mem::MaybeUninit;
-
 
 fn init_heap() {
     const HEAP_SIZE: usize = 32 * 1024;
@@ -43,8 +41,8 @@ fn init_heap() {
     }
 }
 
-
 const BYTES_PER_SAMPLE: usize = 2;
+const SAMPLE_RATE: u32 = 41000;
 const FFT_SIZE: usize = 1024;
 
 #[esp_hal_embassy::main]
@@ -70,7 +68,7 @@ async fn main(_spawner: Spawner) {
         peripherals.I2S0,
         Standard::Philips,
         DataFormat::Data16Channel16,
-        41000u32.Hz(),
+        SAMPLE_RATE.Hz(),
         dma_channel.configure(false, DmaPriority::Priority0),
         rx_descriptors,
         tx_descriptors,
@@ -101,27 +99,27 @@ async fn main(_spawner: Spawner) {
 
         let count = transaction.pop(&mut data).await.unwrap();
 
-        // get the first 1024 samples if they are available
         if count >= FFT_SIZE * BYTES_PER_SAMPLE {
-            let mut samples = [0i16; FFT_SIZE];
-            samples
-                .iter_mut()
-                .zip(data.chunks_exact(2))
-                .for_each(|(sample, chunk)| {
-                    *sample = i16::from_le_bytes([chunk[0], chunk[1]]);
-                });
+            let mut samples: [i16; FFT_SIZE] = [0i16; FFT_SIZE];
+            for (i, chunk) in data.chunks_exact(4).enumerate().take(FFT_SIZE) {
+                samples[i] = i16::from_be_bytes([chunk[0], chunk[1]]);
+            }
 
-            let mut f32_samples: [f32; FFT_SIZE] = [0.0; FFT_SIZE];
-            normalize_samples(&samples, &mut f32_samples);
+            let fft_data = process_frame(&samples).unwrap();
+            info!(
+                "FFT: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}",
+                fft_data[6],
+                fft_data[7],
+                fft_data[8],
+                fft_data[9],
+                fft_data[10],
+                fft_data[11],
+                fft_data[12],
+                fft_data[13],
+                fft_data[14]
+            );
 
-            info!("Samples: {:?}", &f32_samples[0..5]);
-
-            let window_function = microdsp::common::WindowFunctionType::Hann;
-            apply_window_function(window_function, &mut f32_samples);
-   
-            info!("Samples: {:?}", &f32_samples[0..5]);
-
-            
+            // info!("Got {} bytes", count);
         }
     }
 }

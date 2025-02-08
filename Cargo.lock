@@ -1546,8 +1546,3 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[patch.unused]]
-name = "esp-backtrace"
-version = "0.15.0"
-source = "git+https://github.com/esp-rs/esp-hal.git?rev=59a2c17a5294843a6683099e1da969cb0cc013e5#59a2c17a5294843a6683099e1da969cb0cc013e5"

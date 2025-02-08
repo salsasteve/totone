@@ -1,0 +1,20 @@
+[package]
+name = "micro-dsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+microfft = "0.6.0"
+micromath = "2.1.0"
+microdsp = "0.1.2"
+
+
+[dev-dependencies]
+rand = "0.9.0"
+wavegen = "0.4.1"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

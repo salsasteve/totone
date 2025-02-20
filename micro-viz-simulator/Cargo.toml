@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 embedded-graphics = "0.8.1"
 embedded-graphics-simulator = "0.7.0"
-chrono = "0.4.19"
+micromath = "2.1.0"

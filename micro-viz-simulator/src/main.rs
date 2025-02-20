@@ -1,72 +1,70 @@
+//! # Example: Progress
+//!
+//! An example displaying a progress circle.
+
 use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::BinaryColor,
     prelude::*,
-    primitives::{
-        Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, StrokeAlignment, Triangle,
-    },
-    text::{Alignment, Text},
+    primitives::{Arc, PrimitiveStyleBuilder, StrokeAlignment},
+    text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use embedded_graphics_simulator::{
-    BinaryColorTheme, OutputSettingsBuilder, SimulatorDisplay, Window,
+    BinaryColorTheme, OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
+use std::{thread, time::Duration};
 
 fn main() -> Result<(), std::convert::Infallible> {
     // Create a new simulator display with 64x64 pixels.
     let mut display: SimulatorDisplay<BinaryColor> = SimulatorDisplay::new(Size::new(64, 64));
 
     // Create styles used by the drawing operations.
-    let thin_stroke = PrimitiveStyle::with_stroke(BinaryColor::On, 1);
-    let thick_stroke = PrimitiveStyle::with_stroke(BinaryColor::On, 3);
-    let border_stroke = PrimitiveStyleBuilder::new()
+    let arc_stroke = PrimitiveStyleBuilder::new()
         .stroke_color(BinaryColor::On)
-        .stroke_width(3)
+        .stroke_width(5)
         .stroke_alignment(StrokeAlignment::Inside)
         .build();
-    let fill = PrimitiveStyle::with_fill(BinaryColor::On);
-    let character_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-
-    let yoffset = 14;
-
-    // Draw a 3px wide outline around the display.
-    display
-        .bounding_box()
-        .into_styled(border_stroke)
-        .draw(&mut display)?;
-
-    // Draw a triangle.
-    Triangle::new(
-        Point::new(16, 16 + yoffset),
-        Point::new(16 + 16, 16 + yoffset),
-        Point::new(16 + 8, yoffset),
-    )
-    .into_styled(thin_stroke)
-    .draw(&mut display)?;
-
-    // Draw a filled square
-    Rectangle::new(Point::new(52, yoffset), Size::new(16, 16))
-        .into_styled(fill)
-        .draw(&mut display)?;
-
-    // Draw a circle with a 3px wide stroke.
-    Circle::new(Point::new(88, yoffset), 17)
-        .into_styled(thick_stroke)
-        .draw(&mut display)?;
-
-    // Draw centered text.
-    let text = "embedded-graphics";
-    Text::with_alignment(
-        text,
-        display.bounding_box().center() + Point::new(0, 15),
-        character_style,
-        Alignment::Center,
-    )
-    .draw(&mut display)?;
+    let character_style = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
+    let text_style = TextStyleBuilder::new()
+        .baseline(Baseline::Middle)
+        .alignment(Alignment::Center)
+        .build();
 
     let output_settings = OutputSettingsBuilder::new()
         .theme(BinaryColorTheme::OledBlue)
         .build();
-    Window::new("Hello World", &output_settings).show_static(&display);
+    let mut window = Window::new("Progress", &output_settings);
 
-    Ok(())
+    // The current progress percentage
+    let mut progress = 78;
+
+    'running: loop {
+        display.clear(BinaryColor::Off)?;
+
+        let sweep = progress as f32 * 360.0 / 100.0;
+
+        // Draw an arc with a 5px wide stroke.
+        Arc::new(Point::new(2, 2), 64 - 4, 90.0.deg(), sweep.deg())
+            .into_styled(arc_stroke)
+            .draw(&mut display)?;
+
+        // Draw centered text.
+        let text = format!("{}%", progress);
+        Text::with_text_style(
+            &text,
+            display.bounding_box().center(),
+            character_style,
+            text_style,
+        )
+        .draw(&mut display)?;
+
+        window.update(&display);
+
+        if window.events().any(|e| e == SimulatorEvent::Quit) {
+            break 'running Ok(());
+        }
+        thread::sleep(Duration::from_millis(50));
+
+        progress = (progress + 1) % 101;
+    }
 }

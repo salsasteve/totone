@@ -1,7 +1,0 @@
-[workspace]
-resolver = "2"
-members = ["micro-dsp", "totone"]
-
-[workspace.metadata.groups]
-crates = ["path:micro-dsp/*"]
-bin = ["path:totone/*"]

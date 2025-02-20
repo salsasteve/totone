@@ -1,0 +1,8 @@
+[package]
+name = "micro-viz-simulator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+embedded-graphics = "0.8.1"
+embedded-graphics-simulator = "0.7.0"

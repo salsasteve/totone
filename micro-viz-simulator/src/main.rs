@@ -1,70 +1,97 @@
-//! # Example: Progress
-//!
-//! An example displaying a progress circle.
-
 use embedded_graphics::{
-    mono_font::{ascii::FONT_10X20, MonoTextStyle},
-    pixelcolor::BinaryColor,
+    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    pixelcolor::{BinaryColor, Rgb888},
     prelude::*,
-    primitives::{Arc, PrimitiveStyleBuilder, StrokeAlignment},
+    primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use embedded_graphics_simulator::{
     BinaryColorTheme, OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
+use micro_viz::DrawingDemo;
+use micromath::F32Ext;
 use std::{thread, time::Duration};
 
+// Constants for visualization parameters
+pub const WIDTH: u32 = 64;
+pub const HEIGHT: u32 = 64;
+pub const FRAME_DELAY_MS: u64 = 16;
+
+const WHITE: Rgb888 = Rgb888::new(255, 255, 255);
+const BLACK: Rgb888 = Rgb888::new(0, 0, 0);
+const RED: Rgb888 = Rgb888::new(255, 0, 0);
+const GREEN: Rgb888 = Rgb888::new(0, 255, 0);
+const BLUE: Rgb888 = Rgb888::new(0, 0, 255);
+const YELLOW: Rgb888 = Rgb888::new(255, 255, 0);
+const VIOLET: Rgb888 = Rgb888::new(255, 0, 255);
+
+pub fn calculate_amplitude(x: f32, time: f32, frequency: f32) -> f32 {
+    let phase = time + x * frequency * 2.0 * core::f32::consts::PI;
+    (phase.sin() * 0.5 + 0.5) * 48.0
+}
+
 fn main() -> Result<(), std::convert::Infallible> {
-    // Create a new simulator display with 64x64 pixels.
-    let mut display: SimulatorDisplay<BinaryColor> = SimulatorDisplay::new(Size::new(64, 64));
-
-    // Create styles used by the drawing operations.
-    let arc_stroke = PrimitiveStyleBuilder::new()
-        .stroke_color(BinaryColor::On)
-        .stroke_width(5)
-        .stroke_alignment(StrokeAlignment::Inside)
-        .build();
-    let character_style = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
-    let text_style = TextStyleBuilder::new()
-        .baseline(Baseline::Middle)
-        .alignment(Alignment::Center)
-        .build();
-
-    let output_settings = OutputSettingsBuilder::new()
-        .theme(BinaryColorTheme::OledBlue)
-        .build();
-    let mut window = Window::new("Progress", &output_settings);
-
-    // The current progress percentage
-    let mut progress = 78;
-
-    'running: loop {
-        display.clear(BinaryColor::Off)?;
-
-        let sweep = progress as f32 * 360.0 / 100.0;
-
-        // Draw an arc with a 5px wide stroke.
-        Arc::new(Point::new(2, 2), 64 - 4, 90.0.deg(), sweep.deg())
-            .into_styled(arc_stroke)
+    // Create a display with the specified width and height
+    let mut display: SimulatorDisplay<Rgb888> = SimulatorDisplay::new(Size::new(WIDTH, HEIGHT));
+    
+    // Create a window with the specified title and size
+    let mut window = Window::new(
+        "MicroViz Simulator",
+        &OutputSettingsBuilder::new().theme(BinaryColorTheme::Default).build(),
+    );
+    
+    // Create a drawing demo instance
+    let mut demo = DrawingDemo::new();
+    
+    // Initialize time variable for animation
+    let mut time: f32 = 0.0;
+    
+    // Main loop
+    loop {
+        // Clear the display
+        display.clear(BinaryColor::Off.into())?;
+        
+        // Calculate the heights for each bar based on the amplitude function
+        let heights: [i32; 8] = [
+            calculate_amplitude(0.0, time, 1.0) as i32,
+            calculate_amplitude(1.0, time, 1.0) as i32,
+            calculate_amplitude(2.0, time, 1.0) as i32,
+            calculate_amplitude(3.0, time, 1.0) as i32,
+            calculate_amplitude(4.0, time, 1.0) as i32,
+            calculate_amplitude(5.0, time, 1.0) as i32,
+            calculate_amplitude(6.0, time, 1.0) as i32,
+            calculate_amplitude(7.0, time, 1.0) as i32,
+        ];
+        
+        // Update the drawing demo with the calculated heights
+        demo.update(&mut display, heights)?;
+        
+        // Draw a rectangle around the display area
+        Rectangle::with_corners(Point::zero(), Point::new(WIDTH as i32 - 1, HEIGHT as i32 - 1))
+            .into_styled(
+                PrimitiveStyleBuilder::new()
+                    .stroke_color(BLACK)
+                    .stroke_width(2)
+                    .build(),
+            )
             .draw(&mut display)?;
-
-        // Draw centered text.
-        let text = format!("{}%", progress);
-        Text::with_text_style(
-            &text,
-            display.bounding_box().center(),
-            character_style,
-            text_style,
-        )
-        .draw(&mut display)?;
-
+        
+        // Draw the display on the window
         window.update(&display);
-
-        if window.events().any(|e| e == SimulatorEvent::Quit) {
-            break 'running Ok(());
+        
+        // Increment time for animation
+        time += 0.05;
+        
+        // Wait for a frame delay
+        thread::sleep(Duration::from_millis(FRAME_DELAY_MS));
+        
+        // Handle window events
+        if let Some(event) = window.events().next() {
+            if let SimulatorEvent::Quit = event {
+                break;
+            }
         }
-        thread::sleep(Duration::from_millis(50));
-
-        progress = (progress + 1) % 101;
     }
+    
+    Ok(())
 }

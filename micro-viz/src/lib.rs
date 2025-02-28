@@ -56,7 +56,7 @@ impl DrawingDemo {
         }
 
         // Increment animation counters
-        self.wheel_val = self.wheel_val.wrapping_add(1);
+        // self.wheel_val = self.wheel_val.wrapping_add(1);
         self.step_counter = self.step_counter.wrapping_add(1);
 
         Ok(())

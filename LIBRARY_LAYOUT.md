@@ -19,8 +19,8 @@ graph TD
     end
     
     %% Add notes about the libraries
-    classDef noStd fill:#90ee90,stroke:#006400,stroke-width:2px;
-    classDef application fill:#deb887,stroke:#8b4513,stroke-width:2px;
+    classDef noStd fill:#90ee90,stroke:#006400,stroke-width:2px,color:black;
+    classDef application fill:#deb887,stroke:#8b4513,stroke-width:2px,color:black;
     classDef tester fill:#4b8bbe,color:white,stroke:#306998,stroke-width:2px;
     
     class dsp,viz noStd;

@@ -75,7 +75,7 @@ fn main() -> Result<(), std::convert::Infallible> {
     );
 
     // Create a drawing demo instance
-    let mut demo = DrawingDemo::new(WIDTH as u16, HEIGHT as u16);
+    let mut demo = DrawingDemo::new(WIDTH as u16, HEIGHT as u16, 8);
 
     // Initialize time variable for animation
     let mut time: f32 = 0.0;

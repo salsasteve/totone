@@ -6,20 +6,47 @@ use embedded_graphics::{
     primitives::{Line, PrimitiveStyle},
     Drawable,
 };
+
+pub const BAR_WIDTH: u32 = 8;
+pub const NUM_BARS: u32 = 8;
+pub const BAR_SPACING: u32 = 0;
+pub const FRAME_DELAY_MS: u64 = 16;
+
+// Common colors
+const WHITE: Rgb888 = Rgb888::new(255, 255, 255);
+const BLACK: Rgb888 = Rgb888::new(0, 0, 0);
+const RED: Rgb888 = Rgb888::new(255, 0, 0);
+const GREEN: Rgb888 = Rgb888::new(0, 255, 0);
+const BLUE: Rgb888 = Rgb888::new(0, 0, 255);
+const YELLOW: Rgb888 = Rgb888::new(255, 255, 0);
+const VIOLET: Rgb888 = Rgb888::new(255, 0, 255);
+
 /// Drawing demo for the LED matrix
 pub struct DrawingDemo {
     wheel_val: u8,
     current_step: u8,
     step_counter: u32,
+    bar_width: u8,
+    screen_width: u16,
+    screen_height: u16,
+    stroke_width: u8,
+    color_wheel_multiplier: u8,
 }
 
 impl DrawingDemo {
     /// Creates a new DrawingDemo instance
-    pub const fn new() -> Self {
+    pub const fn new(screen_width:u16, screen_height:u16, stroke_width:u8) -> Self {
+        
+
         Self {
             wheel_val: 0,
             current_step: 0,
             step_counter: 0,
+            bar_width: 8,
+            stroke_width,
+            screen_width,
+            screen_height,
+            color_wheel_multiplier: 32,
         }
     }
 
@@ -45,13 +72,14 @@ impl DrawingDemo {
         // Draw colorful line at the bottom of the display
 
         for i in 0..8usize {
-            let l_max = i * 8;
-            let r_max = (i + 1) * 8 - 1;
-            let l_point = Point::new(l_max as i32, heights[i]);
-            let r_point = Point::new(r_max as i32, heights[i]);
-            let color = self.color_wheel((i as u8 * 32).wrapping_add(self.wheel_val));
+            let reverse_height = self.screen_height as i32 - heights[i];
+            let l_max = i * self.bar_width as usize;
+            let r_max = (i + 1) * self.bar_width as usize - 1;
+            let l_point = Point::new(l_max as i32, reverse_height);
+            let r_point = Point::new(r_max as i32, reverse_height);
+            let color = self.color_wheel((i as u8 * self.color_wheel_multiplier).wrapping_add(self.wheel_val));
             let line = Line::new(l_point, r_point);
-            line.into_styled(PrimitiveStyle::with_stroke(color, 8))
+            line.into_styled(PrimitiveStyle::with_stroke(color, self.stroke_width as u32))
                 .draw(fb)?;
         }
 

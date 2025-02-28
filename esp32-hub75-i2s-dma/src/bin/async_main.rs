@@ -4,7 +4,6 @@
 
 extern crate alloc;
 
-use core::fmt;
 use core::mem::{size_of, MaybeUninit};
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -61,14 +60,7 @@ const NROWS: usize = compute_rows(ROWS);
 const FRAME_COUNT: usize = compute_frame_count(BITS);
 const FPS_INTERVAL: Duration = Duration::from_secs(1);
 
-// Common colors
-const WHITE: Rgb888 = Rgb888::new(255, 255, 255);
-const BLACK: Rgb888 = Rgb888::new(0, 0, 0);
-const RED: Rgb888 = Rgb888::new(255, 0, 0);
-const GREEN: Rgb888 = Rgb888::new(0, 255, 0);
-const BLUE: Rgb888 = Rgb888::new(0, 0, 255);
-const YELLOW: Rgb888 = Rgb888::new(255, 255, 0);
-const VIOLET: Rgb888 = Rgb888::new(255, 0, 255);
+
 
 // Static atomic counters for performance monitoring
 static REFRESH_RATE: AtomicU32 = AtomicU32::new(0);
@@ -163,7 +155,7 @@ async fn display_task(
 ) {
     info!("display_task: starting!");
 
-    let mut demo = DrawingDemo::new();
+    let mut demo = DrawingDemo::new(COLS as u16, ROWS as u16, 8);
     let mut count = 0u32;
     let mut start = Instant::now();
 

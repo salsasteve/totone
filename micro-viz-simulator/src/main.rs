@@ -56,7 +56,7 @@ pub fn simulate_fft(time: f32) -> [f32; 8] {
         };
 
         // Ensure magnitudes stay in proper range
-        magnitudes[i] = (base_mag + neighbor_effect).max(0.1).min(1.0) * 48.0;
+        magnitudes[i] = (base_mag + neighbor_effect).max(0.01).min(1.0) * 63.0;
     }
 
     magnitudes
@@ -75,7 +75,7 @@ fn main() -> Result<(), std::convert::Infallible> {
     );
 
     // Create a drawing demo instance
-    let mut demo = DrawingDemo::new();
+    let mut demo = DrawingDemo::new(WIDTH as u16, HEIGHT as u16);
 
     // Initialize time variable for animation
     let mut time: f32 = 0.0;

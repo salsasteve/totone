@@ -52,6 +52,7 @@ lto = 'fat'
 opt-level = 's'
 overflow-checks = false
 
+
 [patch.crates-io]
 esp-backtrace    = { git = "https://github.com/esp-rs/esp-hal.git" }
 esp-build        = { git = "https://github.com/esp-rs/esp-hal.git" }
@@ -60,4 +61,3 @@ esp-hal-embassy  = { git = "https://github.com/esp-rs/esp-hal.git" }
 esp-println      = { git = "https://github.com/esp-rs/esp-hal.git" }
 esp-riscv-rt     = { git = "https://github.com/esp-rs/esp-hal.git" }
 xtensa-lx-rt     = { git = "https://github.com/esp-rs/esp-hal.git" }
-

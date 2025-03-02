@@ -155,20 +155,34 @@ async fn display_task(
 ) {
     info!("display_task: starting!");
 
-    let mut demo = DrawingDemo::new(COLS as u16, ROWS as u16, 8);
+    let mut demo = DrawingDemo::new(COLS as u16, ROWS as u16, 1,50);
     let mut count = 0u32;
     let mut start = Instant::now();
+    let mut time: f32 = 0.0;
 
     loop {
         fb.clear();
 
         // Update drawing demo
-        demo.update(fb, [4,12,20,28,36,44,52,60]).unwrap();
+        // demo.update(fb, [4,12,20,28,36,44,52,60]).unwrap();
+        let fft_magnitudes = simulate_fft(time);
+        let heights: [i32; 8] = [
+            fft_magnitudes[0] as i32,
+            fft_magnitudes[1] as i32,
+            fft_magnitudes[2] as i32,
+            fft_magnitudes[3] as i32,
+            fft_magnitudes[4] as i32,
+            fft_magnitudes[5] as i32,
+            fft_magnitudes[6] as i32,
+            fft_magnitudes[7] as i32,
+        ];
+        demo.update(fb, heights).unwrap();
 
         tx.signal(fb);
         fb = rx.wait().await;
 
         count += 1;
+        time += 0.05;
         const FPS_INTERVAL: Duration = Duration::from_secs(1);
         if start.elapsed() > FPS_INTERVAL {
             RENDER_RATE.store(count, Ordering::Relaxed);
@@ -229,8 +243,6 @@ extern "C" {
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
     // Initialize logging based on feature flags
-    #[cfg(feature = "log")]
-    esp_println::logger::init_logger(log::LevelFilter::Info);
 
     // Initialize the heap for dynamic memory allocation
     init_heap();
@@ -306,4 +318,50 @@ async fn main(spawner: Spawner) {
         }
         Timer::after(Duration::from_millis(100)).await;
     }
+}
+
+pub fn simulate_fft(time: f32) -> [f32; 8] {
+    // Define our 8 core frequencies on a logarithmic scale (20Hz to 20kHz)
+    let frequencies = [
+        20.0,    // Low bass
+        63.0,    // Bass
+        200.0,   // Low-mid
+        630.0,   // Mid
+        2000.0,  // Upper-mid
+        6300.0,  // Presence
+        12000.0, // Brilliance
+        20000.0, // High end
+    ];
+
+    // Array to store magnitudes for each frequency bin
+    let mut magnitudes = [0.0; 8];
+
+    // Base amplitude for each frequency (can be adjusted to emphasize certain ranges)
+    let base_amplitudes = [
+        0.9, // Bass frequencies are often stronger
+        0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, // High frequencies often have less energy
+    ];
+
+    // Generate a different phase for each frequency bin
+    for i in 0..8 {
+        // Create a sine wave for this frequency
+        let freq = frequencies[i];
+        let phase = time * freq * 0.01; // Scale time to make animation visible
+
+        // Calculate magnitude with some time-based modulation
+        // This creates a more interesting visualization
+        let base_mag = (phase.sin() * 0.5 + 0.5) * base_amplitudes[i];
+
+        // Add some cross-talk between adjacent frequency bins
+        let neighbor_effect = if i > 0 {
+            (time * frequencies[i - 1] * 0.015).sin() * 0.2
+        } else {
+            0.0
+        };
+
+        // Ensure magnitudes stay in proper range
+        magnitudes[i] = (base_mag + neighbor_effect).max(0.01).min(1.0) * 63.0;
+    }
+
+    magnitudes
 }

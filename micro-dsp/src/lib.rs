@@ -5,51 +5,6 @@ use microdsp::common::{apply_window_function, real_fft, WindowFunctionType::Hann
 use microfft::Complex32;
 use micromath::F32Ext;
 
-// pub fn normalize_sample(sample: i16) -> f32 {
-//     sample as f32 / i16::MAX as f32
-// }
-
-// pub fn normalize_samples(samples: &[i16], normalized_samples: &mut [f32]) {
-//     for (i, &sample) in samples.iter().enumerate() {
-//         normalized_samples[i] = normalize_sample(sample);
-//     }
-// }
-
-// pub fn apply_hann_window(
-//     samples: &[i16],
-//     windowed_samples: &mut [f32],
-// ) -> Result<(), &'static str> {
-//     let length = windowed_samples.len();
-//     if length > samples.len() {
-//         return Err("Length exceeds sample size");
-//     }
-//     // check for valid length of 1024
-//     if length != 1024 {
-//         return Err("Length must be 1024");
-//     }
-
-//     normalize_samples(samples, windowed_samples);
-
-//     apply_window_function(Hann, windowed_samples);
-
-//     Ok(())
-// }
-
-// fn apply_hann_window(samples: &mut [f32]) {
-//     apply_window_function(Hann, samples);
-// }
-
-// fn compute_fft(samples: &mut [f32]) -> [microfft::Complex32; 1024] {
-//     real_fft(samples)
-// }
-
-// fn compute_magnitude(fft_output: &[microfft::Complex32; 512]) -> [f32; 512] {
-//     let mut magnitude = [0.0; 512];
-//     for i in 0..512 {
-//         magnitude[i] = fft_output[i].hypot(fft_output[i + 512]);
-//     }
-//     magnitude
-// }
 
 /// Normalize a single sample from i16 to f32.
 pub fn normalize_sample(sample: i16) -> f32 {

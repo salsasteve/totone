@@ -12,7 +12,7 @@ use std::{thread, time::Duration};
 // Constants for visualization parameters
 pub const WIDTH: u32 = 64;
 pub const HEIGHT: u32 = 64;
-pub const FRAME_DELAY_MS: u64 = 16;
+pub const FRAME_DELAY_MS: u64 = 1;
 
 const BLACK: Rgb888 = Rgb888::new(0, 0, 0);
 
@@ -75,7 +75,7 @@ fn main() -> Result<(), std::convert::Infallible> {
     );
 
     // Create a drawing demo instance
-    let mut demo = DrawingDemo::new(WIDTH as u16, HEIGHT as u16, 8);
+    let mut demo = DrawingDemo::new(WIDTH as u16, HEIGHT as u16, 1, 50);
 
     // Initialize time variable for animation
     let mut time: f32 = 0.0;

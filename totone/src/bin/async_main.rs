@@ -11,17 +11,17 @@ use esp_backtrace as _;
 use esp_hal::{
     dma_buffers,
     i2s::master::{I2s, I2sRx, Standard, DataFormat},
-    interrupt::{software::SoftwareInterruptControl, Priority},
-    time::RateExtU32,
+    time::Rate,
     timer::{timg::TimerGroup, AnyTimer},
     Async,
 };
-use esp_hal_embassy::InterruptExecutor;
+
 use static_cell::StaticCell;
 use micro_dsp::process_frame;
 
 
 const FFT_SIZE: usize = 1024;
+static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>> = StaticCell::new();
 
 fn init_heap() {
     const HEAP_SIZE: usize = 3 * 1024;
@@ -118,8 +118,6 @@ async fn main(low_prio_spawner: Spawner) {
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
 
-    let sw_ints = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
 
@@ -132,21 +130,21 @@ async fn main(low_prio_spawner: Spawner) {
 
     let (rx_buffer, rx_descriptors, _, tx_descriptors) = dma_buffers!(4096 * 3, 0);
 
-    let mclk = peripherals.GPIO0;
-    let bclk = peripherals.GPIO2;
-    let ws = peripherals.GPIO4;
-    let din = peripherals.GPIO5;
+    let ws = peripherals.GPIO5;
+    let din = peripherals.GPIO6;
+    let bclk = peripherals.GPIO4;
+    
+    
 
     let i2s = I2s::new(
         peripherals.I2S0,
         Standard::Philips,
         DataFormat::Data16Channel16,
-        44100.Hz(),
+        Rate::from_khz(48),
         dma_channel,
         rx_descriptors,
         tx_descriptors,
     )
-    .with_mclk(mclk)
     .into_async();
 
     let i2s_rx = i2s
@@ -156,16 +154,9 @@ async fn main(low_prio_spawner: Spawner) {
     .with_din(din)
     .build();
 
-    static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>> = StaticCell::new();
+
     let samples_signal = &*SAMPLES_SIGNAL.init(Signal::new());
 
-    static HIGH_PRIO_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::new();
-    let high_prio_executor = InterruptExecutor::new(sw_ints.software_interrupt2);
-    let executor = HIGH_PRIO_EXECUTOR.init(high_prio_executor);
-
-    let high_prio_spawner = executor.start(Priority::Priority3);
+    low_prio_spawner.must_spawn(microphone_reader(i2s_rx, rx_buffer, &samples_signal));
     low_prio_spawner.must_spawn(audio_processor(samples_signal));
-
-
-    high_prio_spawner.must_spawn(microphone_reader(i2s_rx, rx_buffer, samples_signal));
 }

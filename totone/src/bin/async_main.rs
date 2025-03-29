@@ -4,24 +4,24 @@
 use core::mem::MaybeUninit;
 use defmt::info;
 use defmt_rtt as _;
-use embassy_sync::{signal::Signal, blocking_mutex::raw::CriticalSectionRawMutex};
 use embassy_executor::Spawner;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Ticker};
 use esp_backtrace as _;
 use esp_hal::{
     dma_buffers,
-    i2s::master::{I2s, I2sRx, Standard, DataFormat},
+    i2s::master::{DataFormat, I2s, I2sRx, Standard},
     time::Rate,
     timer::{timg::TimerGroup, AnyTimer},
     Async,
 };
 
-use static_cell::StaticCell;
 use micro_dsp::process_frame;
-
+use static_cell::StaticCell;
 
 const FFT_SIZE: usize = 1024;
-static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>> = StaticCell::new();
+static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>> =
+    StaticCell::new();
 
 fn init_heap() {
     const HEAP_SIZE: usize = 3 * 1024;
@@ -35,7 +35,6 @@ fn init_heap() {
         ));
     }
 }
-
 
 #[embassy_executor::task]
 async fn high_prio() {
@@ -54,27 +53,26 @@ async fn microphone_reader(
     signal: &'static Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>,
 ) {
     info!("Starting microphone_reader task");
-    
+
     const BYTES_PER_SAMPLE: usize = 2;
     const FFT_SIZE: usize = 1024;
-    
+
     let mut data = [0u8; 4096 * 2];
     let mut transaction = i2s_rx.read_dma_circular_async(buffer).unwrap();
-    
+
     loop {
         let _avail = transaction.available().await.unwrap();
         let count = transaction.pop(&mut data).await.unwrap();
-        
+
         if count >= FFT_SIZE * BYTES_PER_SAMPLE {
             let mut samples: [i16; FFT_SIZE] = [0i16; FFT_SIZE];
             for (i, chunk) in data.chunks_exact(4).enumerate().take(FFT_SIZE) {
                 samples[i] = i16::from_le_bytes([chunk[0], chunk[1]]);
             }
-            
-            
+
             // Signal the data is ready for processing
             signal.signal(samples);
-            
+
             // Simple output of first few values for debugging
             // info!("Samples: {:?}, {:?}, {:?}", samples[0], samples[1], samples[2]);
         }
@@ -82,30 +80,22 @@ async fn microphone_reader(
 }
 
 #[embassy_executor::task]
-async fn audio_processor(
-    signal: &'static Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>,
-) {
+async fn audio_processor(signal: &'static Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>) {
     info!("Starting audio_processor task");
-    
+
     loop {
         let samples = signal.wait().await;
-        
+
         // Process the samples (e.g., FFT analysis or other audio processing)
         // If you have micro_dsp, you could use:
         let samples_clone = samples;
         let fft_data = process_frame(&samples_clone).unwrap();
-        
+
         // Output the first few values for debugging
         info!(
             "FFT: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}",
-            fft_data[7],
-            fft_data[8],
-            fft_data[9],
-            fft_data[10],
-            fft_data[11],
-            fft_data[12]
+            fft_data[7], fft_data[8], fft_data[9], fft_data[10], fft_data[11], fft_data[12]
         );
-        
     }
 }
 
@@ -133,8 +123,6 @@ async fn main(low_prio_spawner: Spawner) {
     let ws = peripherals.GPIO5;
     let din = peripherals.GPIO6;
     let bclk = peripherals.GPIO4;
-    
-    
 
     let i2s = I2s::new(
         peripherals.I2S0,
@@ -147,13 +135,7 @@ async fn main(low_prio_spawner: Spawner) {
     )
     .into_async();
 
-    let i2s_rx = i2s
-    .i2s_rx
-    .with_bclk(bclk)
-    .with_ws(ws)
-    .with_din(din)
-    .build();
-
+    let i2s_rx = i2s.i2s_rx.with_bclk(bclk).with_ws(ws).with_din(din).build();
 
     let samples_signal = &*SAMPLES_SIGNAL.init(Signal::new());
 

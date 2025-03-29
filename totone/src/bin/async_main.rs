@@ -6,14 +6,10 @@ use defmt::info;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use embassy_time::{Duration, Ticker};
+use embassy_time::{Duration, Ticker, Timer};
 use esp_backtrace as _;
 use esp_hal::{
-    dma_buffers,
-    i2s::master::{DataFormat, I2s, I2sRx, Standard},
-    time::Rate,
-    timer::{timg::TimerGroup, AnyTimer},
-    Async,
+    aes::dma, dma::DmaChannel0, dma_buffers, i2c::master, i2s::master::{DataFormat, I2s, I2sRx, Standard}, peripherals::SPI3, spi::{master::Spi, Error as SpiError}, time::Rate, timer::{timg::TimerGroup, AnyTimer}, Async
 };
 
 use micro_dsp::process_frame;
@@ -22,6 +18,11 @@ use static_cell::StaticCell;
 const FFT_SIZE: usize = 1024;
 static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>> =
     StaticCell::new();
+
+// Configuration constants
+const CHUNK_SIZE: usize = 512 * 4; // 2KB buffer size (could hold 512 float values)
+                                   // Ensure the CHUNK_SIZE matches the client code configuration
+                                   // to prevent buffer overflow issues. 
 
 fn init_heap() {
     const HEAP_SIZE: usize = 3 * 1024;
@@ -80,6 +81,34 @@ async fn microphone_reader(
 }
 
 #[embassy_executor::task]
+async fn send_fft_bin_magnitudes(
+    master_sck: Output<'static>,
+    master_mosi: Output<'static>,
+    master_miso: Input<'static>,
+    master_cs: Output<'static>,
+    dma_channel: DmaChannel0,
+    spi_chan: SPI3,
+) {
+
+    let mut spi_master = Spi::new(
+        peripherals.SPI3,
+        esp_hal::spi::master::Config::default()
+            .with_frequency(esp_hal::time::Rate::from_mhz(2))
+            .with_mode(esp_hal::spi::Mode::_0),
+    )
+    .unwrap()
+    .with_sck(peripherals.GPIO1)
+    .with_mosi(peripherals.GPIO2)
+    .with_miso(peripherals.GPIO35) // CS pin managed separately, dont add it here
+    .into_async();
+
+    loop {
+        
+    }
+    
+}
+
+#[embassy_executor::task]
 async fn audio_processor(signal: &'static Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>) {
     info!("Starting audio_processor task");
 
@@ -100,7 +129,7 @@ async fn audio_processor(signal: &'static Signal<CriticalSectionRawMutex, [i16; 
 }
 
 #[esp_hal_embassy::main]
-async fn main(low_prio_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     info!("Init!");
 
     // Initialize the heap for dynamic memory allocation
@@ -115,6 +144,8 @@ async fn main(low_prio_spawner: Spawner) {
     let timer1: AnyTimer = timg1.timer0.into();
 
     esp_hal_embassy::init([timer0, timer1]);
+    // Launch system monitoring background task
+    spawner.spawn(background_task()).unwrap();
 
     let dma_channel = peripherals.DMA_CH0;
 
@@ -137,8 +168,19 @@ async fn main(low_prio_spawner: Spawner) {
 
     let i2s_rx = i2s.i2s_rx.with_bclk(bclk).with_ws(ws).with_din(din).build();
 
+    
+
     let samples_signal = &*SAMPLES_SIGNAL.init(Signal::new());
 
-    low_prio_spawner.must_spawn(microphone_reader(i2s_rx, rx_buffer, &samples_signal));
-    low_prio_spawner.must_spawn(audio_processor(samples_signal));
+    spawner.must_spawn(microphone_reader(i2s_rx, rx_buffer, &samples_signal));
+    spawner.must_spawn(audio_processor(samples_signal));
+}
+
+/// System monitoring task that runs concurrently with main operation
+#[embassy_executor::task]
+async fn background_task() {
+    loop {
+        Timer::after(Duration::from_millis(1000)).await;
+        info!("Background monitor: system active");
+    }
 }

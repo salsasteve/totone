@@ -32,6 +32,7 @@ micro-dsp = {path = "../micro-dsp"}
 microdsp = "0.1.2"
 micromath = "2.1.0"
 cfg-if              = "1.0.0"
+embedded-hal-async = "1.0.0"
 
 [profile.dev]
 # Rust debug is too slow.

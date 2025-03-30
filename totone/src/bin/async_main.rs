@@ -6,10 +6,18 @@ use defmt::info;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use embassy_time::{Duration, Ticker, Timer};
+use embassy_time::{Duration, Instant, Ticker, Timer};
+use embedded_hal_async::spi::SpiBus;
 use esp_backtrace as _;
 use esp_hal::{
-    aes::dma, dma::DmaChannel0, dma_buffers, i2c::master, i2s::master::{DataFormat, I2s, I2sRx, Standard}, peripherals::SPI3, spi::{master::Spi, Error as SpiError}, time::Rate, timer::{timg::TimerGroup, AnyTimer}, Async
+    dma_buffers,
+    gpio::{Input, Output, OutputConfig, Level, Pull, InputConfig},
+    i2s::master::{DataFormat, I2s, I2sRx, Standard},
+    peripherals::SPI3,
+    spi::{master::Spi, Error as SpiError},
+    time::Rate,
+    timer::{timg::TimerGroup, AnyTimer},
+    Async,
 };
 
 use micro_dsp::process_frame;
@@ -22,7 +30,7 @@ static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE
 // Configuration constants
 const CHUNK_SIZE: usize = 512 * 4; // 2KB buffer size (could hold 512 float values)
                                    // Ensure the CHUNK_SIZE matches the client code configuration
-                                   // to prevent buffer overflow issues. 
+                                   // to prevent buffer overflow issues.
 
 fn init_heap() {
     const HEAP_SIZE: usize = 3 * 1024;
@@ -85,27 +93,52 @@ async fn send_fft_bin_magnitudes(
     master_sck: Output<'static>,
     master_mosi: Output<'static>,
     master_miso: Input<'static>,
-    master_cs: Output<'static>,
-    dma_channel: DmaChannel0,
+    mut master_cs: Output<'static>,
     spi_chan: SPI3,
 ) {
-
     let mut spi_master = Spi::new(
-        peripherals.SPI3,
+        spi_chan,
         esp_hal::spi::master::Config::default()
             .with_frequency(esp_hal::time::Rate::from_mhz(2))
             .with_mode(esp_hal::spi::Mode::_0),
     )
     .unwrap()
-    .with_sck(peripherals.GPIO1)
-    .with_mosi(peripherals.GPIO2)
-    .with_miso(peripherals.GPIO35) // CS pin managed separately, dont add it here
+    .with_sck(master_sck)
+    .with_mosi(master_mosi)
+    .with_miso(master_miso)
     .into_async();
 
+    let mut start_time = Instant::now();
+    let mut last_elapsed_time = 0_u64;
+
+    let mut tx_buffer = [0u8; CHUNK_SIZE];
+    let mut total_data_sent = 0;
+    tx_buffer[2] = 0xFF;
+    tx_buffer[2047] = 0x69;
+
     loop {
-        
+        transmit_data(&mut spi_master, &tx_buffer, &mut master_cs)
+            .await
+            .unwrap();
+
+        tx_buffer[2] = 0xFF;
+        total_data_sent += tx_buffer.len();
+        Timer::after(Duration::from_millis(1000)).await;
+
+        let elapsed_time = start_time.elapsed().as_secs();
+        if elapsed_time > 0 && elapsed_time % 10 == 0 && last_elapsed_time != elapsed_time {
+            let data_rate =
+                total_data_sent as f64 / (start_time.elapsed().as_millis() as f64 / 1000.0); // (just for debugging) there might be some imprecision due to floating point division
+            info!("Total data sent: {} bytes", total_data_sent);
+            // info!("Data rate: {:.2} bytes/second", data_rate);
+            info!("Data value: {}", data_rate);
+            start_time = Instant::now(); // Reset timing reference
+            total_data_sent = 0; // Reset data counter
+            last_elapsed_time = elapsed_time;
+
+            tx_buffer[2] = 0xED; // Update marker byte after statistics reset
+        }
     }
-    
 }
 
 #[embassy_executor::task]
@@ -166,14 +199,29 @@ async fn main(spawner: Spawner) {
     )
     .into_async();
 
-    let i2s_rx = i2s.i2s_rx.with_bclk(bclk).with_ws(ws).with_din(din).build();
-
+    // Configure GPIO pins
+    let config_in = InputConfig::default().with_pull(Pull::Up);
+    let config_out = OutputConfig::default();
     
+
+    let master_sck = Output::new(peripherals.GPIO1, Level::Low, config_out);
+    let master_miso = Input::new(peripherals.GPIO35, config_in);
+    let master_mosi = Output::new(peripherals.GPIO2, Level::Low, config_out);
+    let cs_pin = Output::new(peripherals.GPIO21, Level::Low, config_out);
+
+    let i2s_rx = i2s.i2s_rx.with_bclk(bclk).with_ws(ws).with_din(din).build();
 
     let samples_signal = &*SAMPLES_SIGNAL.init(Signal::new());
 
     spawner.must_spawn(microphone_reader(i2s_rx, rx_buffer, &samples_signal));
     spawner.must_spawn(audio_processor(samples_signal));
+    spawner.must_spawn(send_fft_bin_magnitudes(
+        master_sck,
+        master_mosi,
+        master_miso,
+        cs_pin,
+        peripherals.SPI3,
+    ));
 }
 
 /// System monitoring task that runs concurrently with main operation
@@ -183,4 +231,35 @@ async fn background_task() {
         Timer::after(Duration::from_millis(1000)).await;
         info!("Background monitor: system active");
     }
+}
+
+/// Handles SPI data transmission with proper chip select signaling protocol
+///
+/// This function asserts the chip select (CS) pin to initiate communication, performs
+/// a non-blocking data transfer via SPI, and then releases the CS pin.
+///
+/// # Arguments
+///
+/// * `spi` - A mutable reference to the asynchronous SPI master.
+/// * `data` - A slice of bytes to be transmitted.
+/// * `cs` - A mutable reference to the chip select GPIO pin.
+///
+/// # Returns
+///
+/// * `Result<(), SpiError>` - Returns `Ok(())` if the transmission is successful, or an `SpiError` if it fails.
+async fn transmit_data(
+    spi: &mut Spi<'_, esp_hal::Async>,
+    data: &[u8],
+    cs: &mut Output<'_>,
+) -> Result<(), SpiError> {
+    // Assertion of chip select (active low)
+    cs.set_low();
+
+    // Execute non-blocking data transfer
+    SpiBus::write(spi, data).await?;
+
+    // Release chip select
+    cs.set_high();
+
+    Ok(())
 }

@@ -14,7 +14,8 @@ dependencies = [
 packages = [{include = "scripts", from = "src"}]
 
 [tool.poetry.dependencies]
-numpy = "2.2.3"
+numpy = "2.2.4"
+pyftdi = "0.56.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

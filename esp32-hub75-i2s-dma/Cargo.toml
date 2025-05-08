@@ -36,6 +36,7 @@ heapless = { version = "0.8.0", features = ["ufmt"] }
 micro-viz = { path = "../micro-viz" }
 microdsp = "0.1.2"
 micro-dsp = {path = "../micro-dsp"}
+libm = "0.2"
 
 [features]
 default = ["defmt"]

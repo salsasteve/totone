@@ -4,6 +4,8 @@
 
 extern crate alloc;
 
+use esp32_hub75_i2s_dma::audio::audio_processor;
+
 use core::mem::{size_of, MaybeUninit};
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -34,7 +36,7 @@ use esp_hub75::{
     Hub75Pins,
 };
 
-use micro_viz::DrawingDemo;
+use micro_viz::BarGragh;
 
 use embassy_sync::channel::Channel;
 use micro_dsp::process_frame;
@@ -43,7 +45,7 @@ use static_cell::StaticCell;
 
 // Constants for LED matrix configuration
 const ROWS: usize = 64;
-const COLS: usize = 64;
+const COLS: usize = 128;
 const BITS: u8 = 4;
 const NROWS: usize = compute_rows(ROWS);
 const FRAME_COUNT: usize = compute_frame_count(BITS);
@@ -57,14 +59,14 @@ static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE
 static REFRESH_RATE: AtomicU32 = AtomicU32::new(0);
 static RENDER_RATE: AtomicU32 = AtomicU32::new(0);
 static SIMPLE_COUNTER: AtomicU32 = AtomicU32::new(0);
-const HEAP_SIZE: usize = 128 * 1024;
+const HEAP_SIZE: usize = 32 * 1024;
 
 // Type aliases for readability
 type Hub75Type = Hub75<'static, esp_hal::Async>;
 type FBType = DmaFrameBuffer<ROWS, COLS, NROWS, BITS, FRAME_COUNT>;
 type FrameBufferExchange = Signal<CriticalSectionRawMutex, &'static mut FBType>;
 
-type FftChannelType = Channel<CriticalSectionRawMutex, [f32; 8], FFT_CHANNEL_CAPACITY>;
+type FftChannelType = Channel<CriticalSectionRawMutex, [f32; 512], FFT_CHANNEL_CAPACITY>;
 static FFT_CHANNEL: StaticCell<FftChannelType> = StaticCell::new();
 
 /// Collection of pins and peripherals for the Hub75 LED matrix
@@ -144,8 +146,6 @@ fn create_hub75(peripherals: Hub75Peripherals<'static>) -> Hub75<'static, esp_ha
     .expect("failed to create Hub75!");
 }
 
-
-
 #[task]
 async fn display_task(
     tx: &'static FrameBufferExchange, // Swapped TX/RX names for clarity: TX to Hub75, RX from Hub75
@@ -154,22 +154,16 @@ async fn display_task(
     fft_receiver: embassy_sync::channel::Receiver<
         'static,
         CriticalSectionRawMutex,
-        [f32; 8],
+        [f32; 512],
         FFT_CHANNEL_CAPACITY,
     >, // <-- Add receiver
 ) {
     info!("display_task: starting!");
 
-    let mut demo = DrawingDemo::new(COLS as u16, ROWS as u16, 1, 50); // Adjust params if needed
+    let mut demo = BarGragh::new(COLS as u16, ROWS as u16); // Adjust params if needed
     let mut count = 0u32;
     let mut start = Instant::now();
-    // --- Store the last received FFT data ---
-    let mut current_fft_data: [f32; 8] = [0.0; 8];
-
-    // Define the input and output ranges for scaling
-    let input_min: f32 = 0.0;
-    let input_max: f32 = 10.0;         // Your desired maximum input value
-    let output_max_height: f32 = ROWS as f32; // Max pixel height (e.g., 64.0)
+    let mut current_fft_data: [f32; 512] = [0.0; 512];
 
     loop {
         if let Ok(new_data) = fft_receiver.try_receive() {
@@ -181,29 +175,29 @@ async fn display_task(
         fb.clear();
 
         // --- Apply the New Scaling Logic ---
-        let heights: [i32; 8] = core::array::from_fn(|i| {
-            // 1. Get the raw input value for this bin
-            let input_value = current_fft_data[i];
+        // let heights: [i32; 512] = core::array::from_fn(|i| {
+        //     // 1. Get the raw input value for this bin
+        //     let input_value = current_fft_data[i];
 
-            // 2. Clamp the input value to the expected range [0.0, 10.0]
-            //    Values below 0 become 0, values above 10 become 10.
-            let clamped_input = input_value.max(input_min).min(input_max);
+        //     // 2. Clamp the input value to the expected range [0.0, 10.0]
+        //     //    Values below 0 become 0, values above 10 become 10.
+        //     let clamped_input = input_value.max(input_min).min(input_max);
 
-            // 3. Calculate the proportion within the input range (0.0 to 1.0)
-            //    Avoid division by zero if input_max could equal input_min (not the case here)
-            let proportion = (clamped_input - input_min) / (input_max - input_min); // (input / 10.0)
+        //     // 3. Calculate the proportion within the input range (0.0 to 1.0)
+        //     //    Avoid division by zero if input_max could equal input_min (not the case here)
+        //     let proportion = (clamped_input - input_min) / (input_max - input_min); // (input / 10.0)
 
-            // 4. Scale the proportion to the output pixel height range [0.0, 64.0]
-            let scaled_height = proportion * output_max_height;
+        //     // 4. Scale the proportion to the output pixel height range [0.0, 64.0]
+        //     let scaled_height = proportion * output_max_height;
 
-            // 5. Convert to integer height (truncates)
-            scaled_height as i32
-        });
+        //     // 5. Convert to integer height (truncates)
+        //     scaled_height as i32
+        // });
 
         // Optional: Log the calculated heights for debugging
-        info!("Scaled Heights: {:?}", heights);
+        // info!("Scaled Heights: {:?}", current_fft_data);
 
-        demo.update(fb, heights).unwrap();
+        demo.update(fb, &current_fft_data).unwrap();
 
         // --- Swap framebuffers with hub75_task ---
         tx.signal(fb);
@@ -225,8 +219,8 @@ async fn hub75_task(
     // If not, you need to apply the fix from the previous answer first!
     peripherals: Hub75Peripherals<'static>, // Pass hub75 directly if possible, avoid recreating it
     tx_signal_from_display: &'static FrameBufferExchange, // Renamed for clarity: Wait on this
-    rx_signal_to_display: &'static FrameBufferExchange,   // Renamed for clarity: Signal on this
-    mut fb: &'static mut FBType,                          // Initial buffer (e.g., fb1)
+    rx_signal_to_display: &'static FrameBufferExchange, // Renamed for clarity: Signal on this
+    mut fb: &'static mut FBType,            // Initial buffer (e.g., fb1)
 ) {
     info!("hub75_task: starting!");
     let mut hub75 = create_hub75(peripherals); // Avoid recreating if possible
@@ -248,21 +242,33 @@ async fn hub75_task(
         defmt::trace!("Hub75: Starting render...");
 
         // --- Render the current framebuffer (fb) ---
-        let mut xfer = hub75.render(fb)
-            .map_err(|(e, _hub75)| { defmt::error!("Render start error"); e })
+        let mut xfer = hub75
+            .render(fb)
+            .map_err(|(e, _hub75)| {
+                defmt::error!("Render start error");
+                e
+            })
             .expect("Failed to start render");
 
         defmt::trace!("Hub75: Waiting for render done...");
-        xfer.wait_for_done().await
-            .map_err(|e| { defmt::error!("Render wait_for_done error"); e })
+        xfer.wait_for_done()
+            .await
+            .map_err(|e| {
+                defmt::error!("Render wait_for_done error");
+                e
+            })
             .expect("Rendering wait_for_done failed");
         defmt::trace!("Hub75: Render done.");
 
         // Finalize transfer and get driver back
         let (result, new_hub75) = xfer.wait();
         hub75 = new_hub75; // Update driver instance
-        result.map_err(|e| { defmt::error!("Render result error"); e })
-              .expect("Transfer failed");
+        result
+            .map_err(|e| {
+                defmt::error!("Render result error");
+                e
+            })
+            .expect("Transfer failed");
         defmt::trace!("Hub75: Render cycle complete.");
 
         // --- Update counters ---
@@ -275,14 +281,6 @@ async fn hub75_task(
         }
     }
 }
-
-// --- Minor changes in main related to hub75_task ---
-
-// In main, when creating hub75:
-// let hub75_driver = create_hub75(hub75_peripherals); // Create it once
-
-// In cpu1_fnctn closure:
-// high_pri_spawner.spawn(hub75_task(hub75_driver, &RX, &TX, fb1)).ok(); // Pass the driver instance
 
 
 #[embassy_executor::task]
@@ -318,54 +316,6 @@ async fn microphone_reader(
     }
 }
 
-#[embassy_executor::task]
-async fn audio_processor(
-    signal: &'static Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>,
-    fft_sender: embassy_sync::channel::Sender<
-        'static,
-        CriticalSectionRawMutex,
-        [f32; 8],
-        FFT_CHANNEL_CAPACITY,
-    >, // <-- Add sender
-) {
-    info!("Starting audio_processor task");
-
-    loop {
-        let samples = signal.wait().await;
-        let samples_clone = samples; // Clone if process_frame consumes it, or pass slice
-
-        match process_frame(&samples_clone) {
-            // Assuming process_frame takes &[i16]
-            Ok(fft_data) => {
-                // --- Process raw FFT data into 8 display values ---
-                // Example: Select 8 specific bins or average ranges.
-                // This depends heavily on how `fft_data` is structured and what you want to display.
-                // Replace this with your actual logic.
-                let display_values: [f32; 8] = [
-                    fft_data[8].abs(),  // Example: Magnitude of bin 8
-                    fft_data[16].abs(), // Example: Magnitude of bin 16
-                    fft_data[32].abs(),
-                    fft_data[64].abs(),
-                    fft_data[128].abs(),
-                    fft_data[200].abs(),
-                    fft_data[300].abs(),
-                    fft_data[400].abs(), // Ensure these indices are valid!
-                ];
-
-                // --- Send the processed data ---
-                // Use try_send: if the channel is full (display hasn't picked up last value),
-                // this value is simply dropped. Prevents audio processing from stalling.
-                let _ = fft_sender.try_send(display_values);
-
-                // Optional: Keep your debug logging if needed
-                // info!( /* ... */ );
-            }
-            Err(e) => {
-                defmt::error!("FFT Processing Error: {:?}", e);
-            }
-        }
-    }
-}
 
 extern "C" {
     static _stack_end_cpu0: u32;
@@ -374,9 +324,7 @@ extern "C" {
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
-    // Initialize logging based on feature flags
 
-    // Initialize the heap for dynamic memory allocation
     init_heap();
 
     info!("Main starting!");
@@ -388,7 +336,7 @@ async fn main(spawner: Spawner) {
         ROWS, COLS, BITS, FRAME_COUNT
     );
 
-    // Initialize ESP32 peripherals
+    
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let sw_ints = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let software_interrupt = sw_ints.software_interrupt2;
@@ -402,7 +350,7 @@ async fn main(spawner: Spawner) {
     let din = peripherals.GPIO6;
     let bclk = peripherals.GPIO4;
 
-    // --- Initialize the Channel ---
+    
     let fft_channel = FFT_CHANNEL.init(Channel::new());
     let fft_sender = fft_channel.sender(); // For Core 0 (audio_processor)
     let fft_receiver = fft_channel.receiver(); // For Core 1 (display_task)
@@ -458,28 +406,6 @@ async fn main(spawner: Spawner) {
         latch: peripherals.GPIO41.degrade(),
     };
 
-    // run hub75 and display on second core
-    // let cpu1_fnctn = {
-    //     move || {
-    //         use esp_hal_embassy::Executor;
-    //         let hp_executor = mk_static!(
-    //             InterruptExecutor<2>,
-    //             InterruptExecutor::new(software_interrupt)
-    //         );
-    //         let high_pri_spawner = hp_executor.start(Priority::Priority3);
-
-    //         // hub75 runs as high priority task
-    //         high_pri_spawner
-    //             .spawn(hub75_task(hub75_peripherals, &RX, &TX, fb1))
-    //             .ok();
-
-    //         let lp_executor = mk_static!(Executor, Executor::new());
-    //         // display task runs as low priority task
-    //         lp_executor.run(|spawner| {
-    //             spawner.spawn(display_task(&TX, &RX, fb0)).ok();
-    //         });
-    //     }
-    // };
 
     let cpu1_fnctn = {
         // Capture the receiver end here
@@ -507,7 +433,7 @@ async fn main(spawner: Spawner) {
 
     use esp_hal::system::CpuControl;
     use esp_hal::system::Stack;
-    const DISPLAY_STACK_SIZE: usize = 8192;
+    const DISPLAY_STACK_SIZE: usize = 4096;
     let app_core_stack = mk_static!(Stack<DISPLAY_STACK_SIZE>, Stack::new());
     let mut _cpu_control = CpuControl::new(peripherals.CPU_CTRL);
 

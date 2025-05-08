@@ -666,6 +666,7 @@ dependencies = [
  "esp-hal-embassy",
  "esp-hub75",
  "heapless",
+ "libm",
  "micro-dsp",
  "micro-viz",
  "microdsp",
@@ -872,6 +873,12 @@ name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+
+[[package]]
+name = "libm"
+version = "0.2.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
 
 [[package]]
 name = "linked_list_allocator"

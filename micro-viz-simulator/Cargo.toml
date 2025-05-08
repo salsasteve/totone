@@ -8,3 +8,8 @@ embedded-graphics = "0.8.1"
 embedded-graphics-simulator = "0.7.0"
 micromath = "2.1.0"
 micro-viz = {path = "../micro-viz"}
+lazy_static = "1.4.0"
+
+[features]
+std = ["micro-viz/std"]
+

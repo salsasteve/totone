@@ -1,4 +1,3 @@
-
 use embassy_time::Duration;
 
 // --- Display Config ---

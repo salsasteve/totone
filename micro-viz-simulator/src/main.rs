@@ -40,7 +40,8 @@ pub fn simulate_fft_simple_output_scaling(
     time: f32,
     target_min_output: f32,
     target_max_output: f32,
-) -> [f32; NUM_BINS] { // NUM_BINS is assumed to be a const
+) -> [f32; NUM_BINS] {
+    // NUM_BINS is assumed to be a const
     if target_min_output >= target_max_output {
         panic!("target_min_output must be less than target_max_output");
     }
@@ -48,9 +49,8 @@ pub fn simulate_fft_simple_output_scaling(
     // or runtime panic with division by zero if (NUM_BINS - 1) is used.
     // Assuming NUM_BINS > 0. If NUM_BINS = 1, (NUM_BINS - 1) would be 0.
     if NUM_BINS == 0 {
-         panic!("NUM_BINS constant must be greater than 0.");
+        panic!("NUM_BINS constant must be greater than 0.");
     }
-
 
     // Define our 8 core source frequencies on a logarithmic scale
     let source_core_frequencies = [
@@ -82,7 +82,11 @@ pub fn simulate_fft_simple_output_scaling(
 
         for i in 0..NUM_BINS {
             // Normalized position (0 to 1), handles NUM_BINS = 1 case
-            let bin_pos_norm = if NUM_BINS > 1 { i as f32 / (NUM_BINS - 1) as f32 } else { 0.0 };
+            let bin_pos_norm = if NUM_BINS > 1 {
+                i as f32 / (NUM_BINS - 1) as f32
+            } else {
+                0.0
+            };
             // Using assumed global/static constants LOG_F_MIN, LOG_F_RANGE, INV_2_SIGMA_SQ
             // The `*` dereference is kept from your original code, implying these might be Lazy or static refs.
             let bin_center_log_freq = *LOG_F_MIN + bin_pos_norm * *LOG_F_RANGE;
@@ -95,7 +99,11 @@ pub fn simulate_fft_simple_output_scaling(
     // --- 2. Apply overall spectral shaping and find max before noise ---
     let mut current_max_val_before_noise = 0.0f32;
     for i in 0..NUM_BINS {
-        let bin_pos_norm = if NUM_BINS > 1 { i as f32 / (NUM_BINS - 1) as f32 } else { 0.0 };
+        let bin_pos_norm = if NUM_BINS > 1 {
+            i as f32 / (NUM_BINS - 1) as f32
+        } else {
+            0.0
+        };
         let shaping_factor = 0.4 + 0.6 * (1.0 - bin_pos_norm).powi(2);
         magnitudes[i] *= shaping_factor;
 
@@ -106,7 +114,8 @@ pub fn simulate_fft_simple_output_scaling(
 
     // --- 3. Normalize based on peak after shaping (from original) ---
     // This makes noise relative to the shaped signal's peak.
-    if current_max_val_before_noise > 1e-6 { // Use a small epsilon to prevent division by zero/small numbers
+    if current_max_val_before_noise > 1e-6 {
+        // Use a small epsilon to prevent division by zero/small numbers
         for i in 0..NUM_BINS {
             magnitudes[i] /= current_max_val_before_noise;
         }
@@ -115,13 +124,17 @@ pub fn simulate_fft_simple_output_scaling(
 
     // --- 4. Add dynamic noise (from original) ---
     for i in 0..NUM_BINS {
-        let bin_pos_norm = if NUM_BINS > 1 { i as f32 / (NUM_BINS - 1) as f32 } else { 0.0 };
+        let bin_pos_norm = if NUM_BINS > 1 {
+            i as f32 / (NUM_BINS - 1) as f32
+        } else {
+            0.0
+        };
         let bin_center_log_freq = *LOG_F_MIN + bin_pos_norm * *LOG_F_RANGE;
         let bin_freq = bin_center_log_freq.exp();
 
         let noise_phase = time * bin_freq * 0.0025
-                        + (i as f32 * 0.27)
-                        + (i as f32 * PI * 5.5 / NUM_BINS as f32).sin() * 0.6;
+            + (i as f32 * 0.27)
+            + (i as f32 * PI * 5.5 / NUM_BINS as f32).sin() * 0.6;
         let noise_amplitude_factor = 0.05 + 0.03 * (1.0 - bin_pos_norm);
         let noise_val = (noise_phase.sin() * 0.5 + 0.5) * noise_amplitude_factor;
         magnitudes[i] += noise_val;
@@ -132,10 +145,15 @@ pub fn simulate_fft_simple_output_scaling(
     // Find the current actual min and max of the magnitudes after noise addition
     let mut actual_min = magnitudes[0];
     let mut actual_max = magnitudes[0];
-    for i in 1..NUM_BINS { // Start from 1 since 0 is already assigned
+    for i in 1..NUM_BINS {
+        // Start from 1 since 0 is already assigned
         let val = magnitudes[i];
-        if val < actual_min { actual_min = val; }
-        if val > actual_max { actual_max = val; }
+        if val < actual_min {
+            actual_min = val;
+        }
+        if val > actual_max {
+            actual_max = val;
+        }
     }
 
     // If the signal is flat (all values are the same after all calculations)
@@ -155,7 +173,7 @@ pub fn simulate_fft_simple_output_scaling(
             magnitudes[i] = target_min_output + normalized_val * desired_output_range;
         }
     }
-    
+
     // Final clamp to ensure values are strictly within the target range,
     // handling any potential floating point inaccuracies.
     for i in 0..NUM_BINS {
@@ -188,9 +206,11 @@ fn main() -> Result<(), std::convert::Infallible> {
         // Clear the display
         display.clear(BinaryColor::Off.into())?;
 
-        let mut heights = simulate_fft_simple_output_scaling(time,0.0,250.0);
+        let mut heights = simulate_fft_simple_output_scaling(time, 0.0, 250.0);
         // Update the drawing demo with the calculated heights
         heights[448..].fill(0.0);
+        heights[0..64].fill(64.0);
+        // heights = [0.0; NUM_BINS];
         demo.update(&mut display, &heights)?;
 
         // Draw a rectangle around the display area

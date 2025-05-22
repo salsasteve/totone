@@ -128,9 +128,18 @@ dependencies = [
 
 [[package]]
 name = "defmt"
-version = "0.3.10"
+version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f6162c53f659f65d00619fe31f14556a6e9f8752ccc4a41bd177ffcf3d6130"
+checksum = "f0963443817029b2024136fc4dd07a5107eb8f977eaf18fcd1fdeb11306b64ad"
+dependencies = [
+ "defmt 1.0.1",
+]
+
+[[package]]
+name = "defmt"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "548d977b6da32fa1d1fda2876453da1e7df63ad0304c8b3dae4dbe7b96f39b78"
 dependencies = [
  "bitflags 1.3.2",
  "defmt-macros",
@@ -138,9 +147,9 @@ dependencies = [
 
 [[package]]
 name = "defmt-macros"
-version = "0.4.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d135dd939bad62d7490b0002602d35b358dce5fd9233a709d3c1ef467d4bde6"
+checksum = "3d4fc12a85bcf441cfe44344c4b72d58493178ce635338a3f3b78943aceb258e"
 dependencies = [
  "defmt-parser",
  "proc-macro-error2",
@@ -151,21 +160,21 @@ dependencies = [
 
 [[package]]
 name = "defmt-parser"
-version = "0.4.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3983b127f13995e68c1e29071e5d115cd96f215ccb5e6812e3728cd6f92653b3"
+checksum = "10d60334b3b2e7c9d91ef8150abfb6fa4c1c39ebbcf4a81c2e346aad939fee3e"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "defmt-rtt"
-version = "0.4.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bab697b3dbbc1750b7c8b821aa6f6e7f2480b47a99bc057a2ed7b170ebef0c51"
+checksum = "b2cac3b8a5644a9e02b75085ebad3b6deafdbdbdec04bb25086523828aa4dfd1"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 1.0.1",
 ]
 
 [[package]]
@@ -212,7 +221,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90327bcc66333a507f89ecc4e2d911b265c45f5c9bc241f98eee076752d35ac6"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "document-features",
  "embassy-executor-macros",
 ]
@@ -235,7 +244,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f878075b9794c1e4ac788c95b728f26aa6366d32eeb10c7051389f898f7d067"
 dependencies = [
- "defmt",
+ "defmt 0.3.100",
 ]
 
 [[package]]
@@ -246,7 +255,7 @@ checksum = "8d2c8cdff05a7a51ba0087489ea44b0b1d97a296ca6b1d6d1a33ea7423d34049"
 dependencies = [
  "cfg-if",
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "embedded-io-async",
  "futures-sink",
  "futures-util",
@@ -354,7 +363,7 @@ version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
 dependencies = [
- "defmt",
+ "defmt 0.3.100",
 ]
 
 [[package]]
@@ -372,7 +381,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 dependencies = [
- "defmt",
+ "defmt 0.3.100",
 ]
 
 [[package]]
@@ -381,7 +390,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ff09972d4073aa8c299395be75161d582e7629cd663171d62af73c8d50dba3f"
 dependencies = [
- "defmt",
+ "defmt 0.3.100",
  "embedded-io",
 ]
 
@@ -458,7 +467,7 @@ version = "0.15.1"
 source = "git+https://github.com/esp-rs/esp-hal.git#5b87495cf7a07b3d03dc7fa35e6fd7ae73736568"
 dependencies = [
  "cfg-if",
- "defmt",
+ "defmt 0.3.100",
  "esp-build",
  "esp-config",
  "esp-println",
@@ -497,7 +506,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "delegate",
  "document-features",
  "embassy-embedded-hal",
@@ -644,7 +653,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d9b774d7a2c96550a5c25016c2abd33370ebac60e534484b7bca344ecb8a3d6"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "vcell",
 ]
 
@@ -654,7 +663,7 @@ version = "0.1.0"
 dependencies = [
  "bitfield 0.17.0",
  "critical-section",
- "defmt",
+ "defmt 1.0.1",
  "defmt-rtt",
  "embassy-executor",
  "embassy-sync",
@@ -681,7 +690,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f7037cfa7c93574b0891062f980a75ae97e9d6c93dcaff3e060b37cf1281c59"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "vcell",
 ]
 
@@ -692,7 +701,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1bbcfa3ab2979171263db80804dabc38bdd45450c7eb775ee3f81d552cf0ba"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "vcell",
 ]
 
@@ -703,7 +712,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ff2a4e1d1b0cb2517af20766004b8e8fb4612043f0b0569703cc90d1880ede4"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "vcell",
 ]
 
@@ -714,7 +723,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eee7512ae8da61338545804a76c5bc9816a9122abbf2f23d1195e3d45fab79af"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "vcell",
 ]
 
@@ -725,7 +734,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a22733ee6f4bb08e3113df6651b2c350f37c44314017476e354ec951a55465e9"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "vcell",
 ]
 
@@ -736,7 +745,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c6d20f119410092abfbc65e46f9362015a7110023528f0dbe855cab80c38ca8"
 dependencies = [
  "critical-section",
- "defmt",
+ "defmt 0.3.100",
  "vcell",
 ]
 
@@ -761,7 +770,7 @@ version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17186ad64927d5ac8f02c1e77ccefa08ccd9eaa314d5a4772278aa204a22f7e7"
 dependencies = [
- "defmt",
+ "defmt 0.3.100",
  "gcd",
 ]
 
@@ -920,6 +929,8 @@ dependencies = [
 name = "micro-viz"
 version = "0.1.0"
 dependencies = [
+ "defmt 1.0.1",
+ "defmt-rtt",
  "embedded-graphics",
  "micromath",
 ]

@@ -13,6 +13,11 @@ use embedded_graphics::{
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "logging")]
+use defmt::info;
+#[cfg(feature = "logging")]
+use defmt_rtt as _;
+
 // Define the constant if it's not already defined elsewhere
 const BAR_SPACING: u32 = 1;
 const BLACK: Rgb888 = Rgb888::BLACK; // Example color
@@ -24,10 +29,19 @@ pub enum ColorMode {
     Gradient,
     StaticPalette,
     DynamicFFT,
+    ShiftingSpectrum,
 }
+
 pub enum BinSpreadMode {
     Even,
     Exponential,
+}
+
+pub enum BinCalculationMode {
+    Average,         // Use the average value of the bins
+    WeightedAverage, // Use a weighted average of the bins
+    Max,             // Use the maximum value of the bins
+    RMS,             // Use the root mean square of the bins
 }
 
 pub struct BarGragh {
@@ -43,17 +57,20 @@ pub struct BarGragh {
     current_heights: Vec<u16>,
     interpolation_steps: u32,
     num_bars: usize,
-    group_size_to_average: usize,
+    group_size: usize,
     rolling_max_fft: f32,
     rolling_max_decay: f32,
     color_mode: ColorMode,
     bin_spread_mode: BinSpreadMode,
+    log_counter: u8,
+    bin_calculation_mode: BinCalculationMode,
+    current_bin_average: f32,
 }
 
 impl BarGragh {
     pub fn new(screen_width: u16, screen_height: u16) -> Self {
         let num_bars = (screen_width / 8).max(1) as usize; // Ensure num_bars is at least 1
-        let group_size_to_average = if num_bars > 0 {
+        let group_size = if num_bars > 0 {
             (512 / num_bars).max(1) // Ensure group_size is at least 1
         } else {
             1 // Default if num_bars is 0 (though prevented above)
@@ -70,13 +87,16 @@ impl BarGragh {
             previous_heights: vec![63.0f32; num_bars],
             target_heights: vec![63.0f32; num_bars],
             current_heights: vec![63u16; num_bars],
-            interpolation_steps: 20, // How fast to move the bars. Higher = slower
+            interpolation_steps:5, // How fast to move the bars. Higher = slower
             num_bars,
-            group_size_to_average,
+            group_size,
             rolling_max_fft: 1.0,
-            rolling_max_decay: 0.80, // Decay factor for the rolling max
+            rolling_max_decay: 0.70, // Decay factor for the rolling max
             color_mode: ColorMode::Spectrum,
-            bin_spread_mode: BinSpreadMode::Exponential, // Default bin spread mode
+            bin_spread_mode: BinSpreadMode::Even, // Default bin spread mode
+            log_counter: 0,
+            bin_calculation_mode: BinCalculationMode::WeightedAverage, // Default bin calculation mode
+            current_bin_average: 0.0,
         }
     }
 
@@ -175,9 +195,7 @@ impl BarGragh {
     
             let x_left = cmp::max(0, cmp::min(self.screen_width as i32 - 1, bar_start_x));
             let x_right = cmp::max(x_left, cmp::min(self.screen_width as i32 - 1, bar_end_x));
-    
-            // let color = self
-            //     .color_wheel((i as u8).wrapping_mul(self.color_wheel_multiplier).wrapping_add(self.wheel_val));
+
             let color = self.apply_color_mode(current_height_val as f32, i);
     
             // Draw the bar as a horizontal line at the inverted Y-coordinate
@@ -206,6 +224,11 @@ impl BarGragh {
                 let intensity = (current_height_val as f32 / self.rolling_max_fft * 255.0) as u8;
                 Rgb888::new(intensity, 0, 255 - intensity)
             }
+            ColorMode::ShiftingSpectrum => self.color_wheel(
+                (bar_number as u8)
+                    .wrapping_mul(self.color_wheel_multiplier)
+                    .wrapping_add(self.wheel_val),
+            )
         };
         color
     }
@@ -235,9 +258,9 @@ impl BarGragh {
             return;
         }
 
-        let avg_val = self.get_bin_average_value(&bins, bar_number);
-        let scaled_avg_val = self.apply_rolling_max_scaling(avg_val);
-        self.target_heights[bar_number] = self.flip_height(scaled_avg_val);
+        let bin_val = self.get_bin_value(&bins, bar_number);
+        let scaled_bin_val = self.apply_rolling_max_scaling(bin_val);
+        self.target_heights[bar_number] = scaled_bin_val.clamp(1.0, 63.0)
     }
     
     fn apply_rolling_max_scaling(&self, value: f32) -> f32 {
@@ -253,8 +276,8 @@ impl BarGragh {
         let avg_val = match self.bin_spread_mode {
             BinSpreadMode::Even => {
                 // Evenly spread bins
-                let start_index = bar_number * self.group_size_to_average;
-                let end_index = cmp::min(start_index + self.group_size_to_average, bins.len());
+                let start_index = bar_number * self.group_size;
+                let end_index = cmp::min(start_index + self.group_size, bins.len());
                 if start_index < end_index {
                     let sum: f32 = bins[start_index..end_index].iter().sum();
                     sum / (end_index - start_index) as f32
@@ -286,6 +309,70 @@ impl BarGragh {
         };
         avg_val
     }
+
+    fn get_bin_value(&self, bins: &[f32], bar_number: usize) -> f32 {
+        let bin_val = match self.bin_spread_mode {
+            BinSpreadMode::Even => {
+                let start_index = bar_number * self.group_size;
+                let end_index = cmp::min(start_index + self.group_size, bins.len());
+                if start_index < end_index {
+                    self.run_bin_calculation(bins, start_index, end_index)
+                } else {
+                    0.0
+                }
+            }
+            BinSpreadMode::Exponential => {
+                let exp_factor = 2.0;
+                let max_bar = self.num_bars as f32;
+                let max_bin = bins.len() as f32;
+
+                let start_index = ((exp_factor.powf(bar_number as f32 / max_bar) - 1.0)
+                    / (exp_factor - 1.0)
+                    * max_bin) as usize;
+                let end_index = ((exp_factor.powf((bar_number + 1) as f32 / max_bar) - 1.0)
+                    / (exp_factor - 1.0)
+                    * max_bin) as usize;
+
+                let start_index = start_index.min(bins.len());
+                let end_index = end_index.min(bins.len());
+
+                if start_index < end_index {
+                    self.run_bin_calculation(bins, start_index, end_index)
+                } else {
+                    0.0
+                }
+            }
+        };
+        bin_val
+    }
+
+    fn run_bin_calculation(&self, bins: &[f32], start_index: usize, end_index: usize) -> f32 {
+        match self.bin_calculation_mode {
+            BinCalculationMode::Average => {
+                bins[start_index..end_index].iter().cloned().sum::<f32>()
+                    / (end_index - start_index) as f32
+            }
+            BinCalculationMode::Max => bins[start_index..end_index]
+                .iter()
+                .cloned()
+                .fold(0.0, f32::max),
+            BinCalculationMode::RMS => {
+                let sum_of_squares = bins[start_index..end_index]
+                    .iter()
+                    .map(|&x| x * x)
+                    .sum::<f32>();
+                (sum_of_squares / (end_index - start_index) as f32).sqrt()
+            }
+            BinCalculationMode::WeightedAverage => {
+                let weighted_sum: f32 = bins[start_index..end_index]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &x)| x * (i as f32 + 1.0)) // Example linear weight
+                    .sum();
+                weighted_sum / (end_index - start_index) as f32
+            }
+        }
+    }
     
      
     fn update_max_rolling_fft(&mut self, bins: &[f32]) {
@@ -298,19 +385,35 @@ impl BarGragh {
         };
         
     }
+    fn get_all_bins_average(&self, bins: &[f32]) -> f32 {
+        let sum: f32 = bins.iter().copied().sum();
+        let avg = sum / bins.len() as f32;
+        avg
+    }
 
     pub fn update<D>(&mut self, fb: &mut D, bins: &[f32]) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb888>,
     {
         self.update_max_rolling_fft(bins);
+        self.current_bin_average = self.get_all_bins_average(bins);
         #[cfg(feature = "std")]
         {
             std::println!("BEGIN UPDATE ------ Interpolation Counter: {}", self.interpolation_counter);
-            std::println!("Bins length: {}, Num_bars: {}, Group size: {}", bins.len(), self.num_bars, self.group_size_to_average);
+            std::println!("Bins length: {}, Num_bars: {}, Group size: {}", bins.len(), self.num_bars, self.group_size);
             std::println!("Initial previous_heights: {:?}", self.previous_heights);
             std::println!("Initial target_heights: {:?}", self.target_heights);
             std::println!("Initial current_heights: {:?}", self.current_heights);
+        }
+
+        self.log_counter += 1;
+        if self.log_counter >= 60 {
+            #[cfg(feature = "logging")]
+            info!(
+                "Initial current_heights: {:?}",
+                defmt::Debug2Format(&self.current_heights)
+            );
+            self.log_counter = 0; // Reset the counter
         }
 
         // Step 1: Update target heights if it's the start of an interpolation cycle.
@@ -321,8 +424,15 @@ impl BarGragh {
             // self.target_heights (which was old previous) will be filled with new targets.
 
             // Calculate new target_heights from the input `bins`.
-            for i in 0..self.num_bars {
-                self.update_bar_target_height(bins, i);
+            if self.current_bin_average < 0.002 {
+                // decay bar heights to 0
+                for i in 0..self.num_bars {
+                    self.target_heights[i] = self.target_heights[i] * self.rolling_max_decay
+                }
+            } else {
+                for i in 0..self.num_bars {
+                    self.update_bar_target_height(bins, i);
+                }
             }
             #[cfg(feature = "std")]
             {

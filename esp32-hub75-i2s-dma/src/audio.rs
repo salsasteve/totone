@@ -9,7 +9,7 @@ use embassy_sync::{
 };
 use esp_hal::{i2s::master::I2sRx, Async};
 use micro_dsp::process_frame; // Replace if using esp-dsp
-// use static_cell::StaticCell;
+                              // use static_cell::StaticCell;
 
 // Statics accessible within the crate (used by main for init)
 // pub(crate) static SAMPLES_SIGNAL: StaticCell<Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>> =

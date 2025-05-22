@@ -45,8 +45,8 @@ use static_cell::StaticCell;
 
 // Constants for LED matrix configuration
 const ROWS: usize = 64;
-const COLS: usize = 128;
-const BITS: u8 = 4;
+const COLS: usize = 256;
+const BITS: u8 = 3;
 const NROWS: usize = compute_rows(ROWS);
 const FRAME_COUNT: usize = compute_frame_count(BITS);
 const FPS_INTERVAL: Duration = Duration::from_secs(1);
@@ -282,7 +282,6 @@ async fn hub75_task(
     }
 }
 
-
 #[embassy_executor::task]
 async fn microphone_reader(
     i2s_rx: I2sRx<'static, Async>,
@@ -316,7 +315,6 @@ async fn microphone_reader(
     }
 }
 
-
 extern "C" {
     static _stack_end_cpu0: u32;
     static _stack_start_cpu0: u32;
@@ -324,7 +322,6 @@ extern "C" {
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
-
     init_heap();
 
     info!("Main starting!");
@@ -336,7 +333,6 @@ async fn main(spawner: Spawner) {
         ROWS, COLS, BITS, FRAME_COUNT
     );
 
-    
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     let sw_ints = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let software_interrupt = sw_ints.software_interrupt2;
@@ -350,7 +346,6 @@ async fn main(spawner: Spawner) {
     let din = peripherals.GPIO6;
     let bclk = peripherals.GPIO4;
 
-    
     let fft_channel = FFT_CHANNEL.init(Channel::new());
     let fft_sender = fft_channel.sender(); // For Core 0 (audio_processor)
     let fft_receiver = fft_channel.receiver(); // For Core 1 (display_task)
@@ -405,7 +400,6 @@ async fn main(spawner: Spawner) {
         addr3: peripherals.GPIO42.degrade(), // D
         latch: peripherals.GPIO41.degrade(),
     };
-
 
     let cpu1_fnctn = {
         // Capture the receiver end here

@@ -18,8 +18,8 @@ esp-hal = { version = "1.0.0-beta.0", features = [
     "unstable",
 ] }
 esp-alloc = { version = "0.7.0" }
-defmt            = {version = "0.3.8", optional = true } 
-defmt-rtt        = "0.4.1"
+defmt            = {version = "1.0.1", optional = true } 
+defmt-rtt        = {version = "1.0.0", optional = true }
 embassy-executor = { version = "0.7.0",  features = [
     "task-arena-size-12288",
     "defmt"
@@ -39,7 +39,8 @@ micro-dsp = {path = "../micro-dsp"}
 libm = "0.2"
 
 [features]
-default = ["defmt"]
+default = ["defmt", "defmt-rtt"]
+logging = ["defmt", "defmt-rtt", "micro-viz/logging"]
 
 [profile.dev]
 # Rust debug is too slow.

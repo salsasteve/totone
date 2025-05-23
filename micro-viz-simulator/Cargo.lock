@@ -179,6 +179,7 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
+ "lazy_static",
  "micro-viz",
  "micromath",
 ]

@@ -1,6 +1,6 @@
-[target.xtensa-esp32-none-elf]
-# runner = "probe-rs run --chip=esp32"
-runner = "espflash flash --monitor --baud 115200"
+[target.xtensa-esp32s3-none-elf]
+runner = "probe-rs run --chip=esp32s3"
+# runner = "espflash flash --monitor --baud 115200"
 
 [env]
 DEFMT_LOG="info"
@@ -10,7 +10,7 @@ rustflags = [
   "-C", "link-arg=-nostartfiles",
 ]
 
-target = "xtensa-esp32-none-elf"
+target = "xtensa-esp32s3-none-elf"
 
 [unstable]
 build-std = ["alloc", "core"]

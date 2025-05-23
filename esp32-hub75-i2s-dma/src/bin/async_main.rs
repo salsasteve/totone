@@ -46,6 +46,7 @@ use static_cell::StaticCell;
 // Constants for LED matrix configuration
 const ROWS: usize = 64;
 const COLS: usize = 256;
+const BAR_WIDTH: u16 = 7;
 const BITS: u8 = 3;
 const NROWS: usize = compute_rows(ROWS);
 const FRAME_COUNT: usize = compute_frame_count(BITS);
@@ -60,6 +61,13 @@ static REFRESH_RATE: AtomicU32 = AtomicU32::new(0);
 static RENDER_RATE: AtomicU32 = AtomicU32::new(0);
 static SIMPLE_COUNTER: AtomicU32 = AtomicU32::new(0);
 const HEAP_SIZE: usize = 32 * 1024;
+use embedded_graphics::pixelcolor::Rgb888;
+use embedded_graphics::prelude::Primitive;
+use embedded_graphics::prelude::Point;
+use embedded_graphics::primitives::Line;
+use embedded_graphics::primitives::PrimitiveStyle;
+use embedded_graphics::prelude::RgbColor;
+use embedded_graphics::Drawable;
 
 // Type aliases for readability
 type Hub75Type = Hub75<'static, esp_hal::Async>;
@@ -141,7 +149,7 @@ fn create_hub75(peripherals: Hub75Peripherals<'static>) -> Hub75<'static, esp_ha
         pins,
         channel,
         tx_descriptors,
-        Rate::from_mhz(30),
+        Rate::from_mhz(20),
     )
     .expect("failed to create Hub75!");
 }
@@ -160,11 +168,12 @@ async fn display_task(
 ) {
     info!("display_task: starting!");
 
-    let mut demo = BarGragh::new(COLS as u16, ROWS as u16); // Adjust params if needed
+    let mut demo = BarGragh::new(COLS as u16, ROWS as u16, BAR_WIDTH); // Adjust params if needed
     let mut count = 0u32;
     let mut start = Instant::now();
     let mut current_fft_data: [f32; 512] = [0.0; 512];
 
+    
     loop {
         if let Ok(new_data) = fft_receiver.try_receive() {
             current_fft_data = new_data;
@@ -173,29 +182,6 @@ async fn display_task(
         }
 
         fb.clear();
-
-        // --- Apply the New Scaling Logic ---
-        // let heights: [i32; 512] = core::array::from_fn(|i| {
-        //     // 1. Get the raw input value for this bin
-        //     let input_value = current_fft_data[i];
-
-        //     // 2. Clamp the input value to the expected range [0.0, 10.0]
-        //     //    Values below 0 become 0, values above 10 become 10.
-        //     let clamped_input = input_value.max(input_min).min(input_max);
-
-        //     // 3. Calculate the proportion within the input range (0.0 to 1.0)
-        //     //    Avoid division by zero if input_max could equal input_min (not the case here)
-        //     let proportion = (clamped_input - input_min) / (input_max - input_min); // (input / 10.0)
-
-        //     // 4. Scale the proportion to the output pixel height range [0.0, 64.0]
-        //     let scaled_height = proportion * output_max_height;
-
-        //     // 5. Convert to integer height (truncates)
-        //     scaled_height as i32
-        // });
-
-        // Optional: Log the calculated heights for debugging
-        // info!("Scaled Heights: {:?}", current_fft_data);
 
         demo.update(fb, &current_fft_data).unwrap();
 

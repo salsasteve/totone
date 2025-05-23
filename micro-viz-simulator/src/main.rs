@@ -10,7 +10,7 @@ use micro_viz::BarGragh;
 use std::{thread, time::Duration};
 
 // Constants for visualization parameters
-pub const WIDTH: u32 = 128;
+pub const WIDTH: u32 = 256;
 pub const HEIGHT: u32 = 64;
 pub const FRAME_DELAY_MS: u64 = 1;
 
@@ -196,7 +196,7 @@ fn main() -> Result<(), std::convert::Infallible> {
     );
 
     // Create a drawing demo instance
-    let mut demo = BarGragh::new(WIDTH as u16, HEIGHT as u16);
+    let mut demo = BarGragh::new(256, 64, 7);
 
     // Initialize time variable for animation
     let mut time: f32 = 0.0;
@@ -212,19 +212,6 @@ fn main() -> Result<(), std::convert::Infallible> {
         heights[0..64].fill(64.0);
         // heights = [0.0; NUM_BINS];
         demo.update(&mut display, &heights)?;
-
-        // Draw a rectangle around the display area
-        Rectangle::with_corners(
-            Point::zero(),
-            Point::new(WIDTH as i32 - 1, HEIGHT as i32 - 1),
-        )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .stroke_color(BLACK)
-                .stroke_width(2)
-                .build(),
-        )
-        .draw(&mut display)?;
 
         // Draw the display on the window
         window.update(&display);

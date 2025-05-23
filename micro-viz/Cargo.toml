@@ -13,3 +13,6 @@ defmt-rtt        = {version = "1.0.0", optional = true }
 std = []
 default = []
 logging = ["defmt", "defmt-rtt"]
+
+[dev-dependencies]
+approx = "0.5"

@@ -19,10 +19,19 @@ use defmt::info;
 use defmt_rtt as _;
 
 // Define the constant if it's not already defined elsewhere
-const BAR_SPACING: u32 = 1;
+const BAR_SPACING: u32 = 1; // Space between bars
 const BLACK: Rgb888 = Rgb888::BLACK; // Example color
+#[allow(unused_imports)] 
+use micromath::F32Ext; 
 
-use micromath::F32Ext; // For f32.max/min in no_std
+
+
+pub mod spectral_band_aggregator; 
+pub use spectral_band_aggregator::*; 
+pub mod bin_summary_strategy;
+pub use bin_summary_strategy::*;
+pub mod spectrum_value_animator;
+pub use spectrum_value_animator::*;
 
 pub enum ColorMode {
     Spectrum,
@@ -32,71 +41,63 @@ pub enum ColorMode {
     ShiftingSpectrum,
 }
 
-pub enum BinSpreadMode {
-    Even,
-    Exponential,
-}
-
-pub enum BinCalculationMode {
-    Average,         // Use the average value of the bins
-    WeightedAverage, // Use a weighted average of the bins
-    Max,             // Use the maximum value of the bins
-    RMS,             // Use the root mean square of the bins
-}
 
 pub struct BarGragh {
     wheel_val: u8,
     step_counter: u32,
-    interpolation_counter: u32,
-    stroke_width: u8,
     screen_width: u16,
     screen_height: u16,
+    bar_width: u16,
     color_wheel_multiplier: u8,
-    previous_heights: Vec<f32>,
-    target_heights: Vec<f32>,
-    current_heights: Vec<u16>,
-    interpolation_steps: u32,
     num_bars: usize,
-    group_size: usize,
     rolling_max_fft: f32,
     rolling_max_decay: f32,
     color_mode: ColorMode,
-    bin_spread_mode: BinSpreadMode,
     log_counter: u8,
-    bin_calculation_mode: BinCalculationMode,
+    bss: BinSummaryStrategy,
     current_bin_average: f32,
+    sba: SpectralBandAggregator,
+    animator: SpectrumValueAnimator,
 }
 
 impl BarGragh {
-    pub fn new(screen_width: u16, screen_height: u16) -> Self {
-        let num_bars = (screen_width / 8).max(1) as usize; // Ensure num_bars is at least 1
-        let group_size = if num_bars > 0 {
-            (512 / num_bars).max(1) // Ensure group_size is at least 1
-        } else {
-            1 // Default if num_bars is 0 (though prevented above)
-        };
+    pub fn new(screen_width: u16, screen_height: u16, bar_width: u16) -> Self {
+        #[cfg(feature = "std")]
+        std::println!("BarGragh::new called with screen_width: {}, screen_height: {}, bar_width: {}", screen_width, screen_height, bar_width);
+        #[cfg(feature = "logging")]
+        info!("BarGragh::new called with screen_width: {}, screen_height: {}, bar_width: {}", screen_width, screen_height, bar_width);
+        let num_bars = (screen_width / (bar_width + BAR_SPACING as u16)).max(1) as usize;
+        
+        let sba = SpectralBandAggregator::new(512, num_bars, BandSpreadModeConfig::Exponential{exp_factor: 7.0});
+
+        let initial_bar_height_calc = 1.0f32;
+        let animator_interpolation_steps = 5; 
+        let animator_max_display_height = screen_height.saturating_sub(1).max(1);
+
+        let animator = SpectrumValueAnimator::new(
+            num_bars,
+            initial_bar_height_calc,
+            animator_interpolation_steps,
+            animator_max_display_height,
+        );
+
 
         Self {
             wheel_val: 0,
             step_counter: 0,
-            interpolation_counter: 0,
-            stroke_width: 1,
             screen_width,
             screen_height,
+            bar_width,
             color_wheel_multiplier: 32,
-            previous_heights: vec![63.0f32; num_bars],
-            target_heights: vec![63.0f32; num_bars],
-            current_heights: vec![63u16; num_bars],
-            interpolation_steps:5, // How fast to move the bars. Higher = slower
             num_bars,
-            group_size,
             rolling_max_fft: 1.0,
-            rolling_max_decay: 0.70, // Decay factor for the rolling max
+            rolling_max_decay: 0.9, // Decay factor for the rolling max
             color_mode: ColorMode::Spectrum,
-            bin_spread_mode: BinSpreadMode::Even, // Default bin spread mode
             log_counter: 0,
-            bin_calculation_mode: BinCalculationMode::WeightedAverage, // Default bin calculation mode
+            bss: BinSummaryStrategy::Max, // Default bin calculation mode
             current_bin_average: 0.0,
+            sba,
+            animator,
         }
     }
 
@@ -125,95 +126,60 @@ impl BarGragh {
         }
     }
 
-    fn ease_out_quad(&self, t: f32) -> f32 {
-        let t_clamped = t.max(0.0).min(1.0); // Using F32Ext for max/min
-        1.0 - (1.0 - t_clamped) * (1.0 - t_clamped)
-    }
-
-    /// Calculates the current interpolation progress using easing.
-    /// Ensures progress reaches 1.0 at the end of the interpolation period.
-    fn calculate_eased_progress(&self) -> f32 {
-        let progress = if self.interpolation_steps == 0 || self.interpolation_steps == 1 {
-            // If 0 steps, or only 1 step, jump directly to target.
-            // For 1 step, interpolation_counter is 0, leading to progress 1.0.
-            1.0
-        } else {
-            // For interpolation_steps > 1
-            // self.interpolation_counter ranges from 0 to self.interpolation_steps - 1.
-            // Division by (self.interpolation_steps - 1) makes progress span [0.0, 1.0].
-            self.interpolation_counter as f32 / (self.interpolation_steps - 1) as f32
-        };
-        // ease_out_quad handles clamping its input, so raw progress can be passed.
-        self.ease_out_quad(progress)
-    }
-
-    /// Interpolates the current heights based on previous, target, and progress.
-    fn interpolate_current_heights(&mut self, eased_progress: f32) {
-        if eased_progress >= 1.0 || self.interpolation_steps == 0 {
-            // Snap to target heights if progress is 1.0 or no interpolation steps
-            for i in 0..self.num_bars {
-                if i < self.target_heights.len() && i < self.current_heights.len() {
-                    self.current_heights[i] = self.target_heights[i].max(0.0) as u16;
-                }
-            }
-            return;
-        }
-
-        // If eased_progress is 0.0 (start of a new cycle), this correctly sets
-        // current_heights[i] = previous_heights[i].
-        for i in 0..self.num_bars {
-            if i < self.previous_heights.len()
-                && i < self.target_heights.len()
-                && i < self.current_heights.len()
-            {
-                let prev = self.previous_heights[i];
-                let target = self.target_heights[i];
-                let interpolated_val = prev * (1.0 - eased_progress) + target * eased_progress;
-                self.current_heights[i] = interpolated_val.max(0.0) as u16;
-            }
-        }
-    }
-
-    fn draw_bars<D>(&self, fb: &mut D, bar_width: u32) -> Result<(), D::Error>
+    fn draw_bars<D>(&self, fb: &mut D) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb888>,
     {
-        if bar_width == 0 {
-            return Ok(());
-        }
-
         for i in 0..self.num_bars {
-            let current_height_val = self.current_heights.get(i).copied().unwrap_or(0);
-            let bar_pixel_height = cmp::min(current_height_val, self.screen_height) as i32;
-    
-            // Invert the Y-axis: Bars are drawn from the top of the screen downwards
-            let y_top = 0; // Top of the screen
-            let y_bottom = cmp::min(self.screen_height as i32, bar_pixel_height);
-    
-            let bar_start_x = (i as u32 * (bar_width + BAR_SPACING)) as i32;
-            let bar_end_x = bar_start_x + bar_width as i32 - 1;
-    
-            let x_left = cmp::max(0, cmp::min(self.screen_width as i32 - 1, bar_start_x));
-            let x_right = cmp::max(x_left, cmp::min(self.screen_width as i32 - 1, bar_end_x));
+            // Get current height from the animator's display values
+            let current_height_val = self.animator.get_current_values_display()[i];
+            
+            // The y_line_coord should be screen_height - height, assuming 0,0 is top-left
+            // And bars grow upwards from the bottom.
+            // If y_line_coord was meant to be the height itself (from top):
+            let y_pos = self.screen_height.saturating_sub(current_height_val).saturating_sub(1);
+            let y_line_coord = cmp::max(0, y_pos) as i32;
 
+
+            let bar_start_x = (i as u32 * (self.bar_width as u32 + BAR_SPACING)) as i32;
+            let bar_end_x = bar_start_x + (self.bar_width as i32) - 1;
+
+            let x_left = cmp::max(0, cmp::min((self.screen_width - 1) as i32, bar_start_x));
+            let x_right = cmp::max(x_left, cmp::min((self.screen_width - 1) as i32, bar_end_x));
+
+            if x_left > x_right { 
+                continue;
+            }
+            
             let color = self.apply_color_mode(current_height_val as f32, i);
-    
-            // Draw the bar as a horizontal line at the inverted Y-coordinate
-            Line::new(Point::new(x_left, y_bottom), Point::new(x_right, y_bottom))
-                .into_styled(PrimitiveStyle::with_stroke(color, self.stroke_width as u32))
-                .draw(fb)?;
+            
+            // Draw line from bottom of screen up to current_height_val
+            // Assuming (x, screen_height-1) is bottom, (x, screen_height - 1 - height) is top of bar
+            let y_bottom = (self.screen_height - 1) as i32;
+            let y_top = (self.screen_height.saturating_sub(current_height_val).max(0)) as i32;
+
+
+            for bar_x_offset in 0..self.bar_width {
+                let x_coord = bar_start_x + bar_x_offset as i32;
+                if x_coord < 0 || x_coord >= self.screen_width as i32 { continue; }
+
+                Line::new(Point::new(x_coord, y_top), Point::new(x_coord, y_bottom))
+                    .into_styled(PrimitiveStyle::with_stroke(color, 1)) 
+                    .draw(fb)?;
+            }
         }
         Ok(())
     }
 
-    fn apply_color_mode(&self, current_height_val:f32, bar_number: usize) -> Rgb888 {
+    fn apply_color_mode(&self, current_height_val: f32, bar_number: usize) -> Rgb888 {
         let color = match self.color_mode {
             ColorMode::Spectrum => {
-                let color_position = ((bar_number as u16 * 255 / self.num_bars as u16) % 255) as u8;
+                let color_position = ((bar_number as u32 * 255 / (self.num_bars as u32 + BAR_SPACING)) % 255) as u8;
                 self.color_wheel(color_position)
             }
             ColorMode::Gradient => {
-                let intensity = (current_height_val as f32 / self.screen_height as f32 * 255.0) as u8;
+                let intensity =
+                    (current_height_val as f32 / self.screen_height as f32 * 255.0) as u8;
                 Rgb888::new(intensity, intensity, intensity)
             }
             ColorMode::StaticPalette => {
@@ -228,163 +194,53 @@ impl BarGragh {
                 (bar_number as u8)
                     .wrapping_mul(self.color_wheel_multiplier)
                     .wrapping_add(self.wheel_val),
-            )
+            ),
         };
         color
     }
 
-    fn update_animation_state(&mut self) {
-        self.wheel_val = self.wheel_val.wrapping_add(1);
-        self.step_counter = self.step_counter.wrapping_add(1);
-
-        if self.interpolation_steps > 0 {
-            // self.interpolation_counter ranges from 0 to self.interpolation_steps - 1
-            if self.interpolation_counter < self.interpolation_steps -1 { // Stop before exceeding max index for (S-1) division
-                self.interpolation_counter += 1;
-            } else {
-                // Reached the end of the interpolation period (e.g., counter was S-1)
-                // or if steps = 1, counter was 0.
-                self.interpolation_counter = 0; // Reset for the next cycle
-            }
-        } else { // interpolation_steps == 0
-            self.interpolation_counter = 0; // Keep at 0 for jump-to-target behavior
-        }
-    }
-    
-    fn update_bar_target_height(&mut self, bins: &[f32], bar_number: usize) {
-        if bar_number >= self.num_bars || bar_number >= self.target_heights.len() {
+    fn update_bar_target_height(&mut self, bins: &[f32], bar_number: usize) -> f32 { // Return f32 for animator
+        if bar_number >= self.num_bars {
             #[cfg(feature = "std")]
-            std::println!("Warning: bar_number {} out of bounds.", bar_number);
-            return;
+            std::println!("Warning: bar_number {} out of bounds for target_heights.", bar_number);
+            return 1.0f32; // Return a default low value
         }
 
-        let bin_val = self.get_bin_value(&bins, bar_number);
+        let bin_val = self.get_bin_value(bins, bar_number);
+        // apply_rolling_max_scaling now scales relative to screen_height for dynamic range
+        // but the final clamp should be to what the animator can display.
         let scaled_bin_val = self.apply_rolling_max_scaling(bin_val);
-        self.target_heights[bar_number] = scaled_bin_val.clamp(1.0, 63.0)
-    }
-    
-    fn apply_rolling_max_scaling(&self, value: f32) -> f32 {
-        // Scale the value based on the rolling max FFT
-        let scaled_value = value / self.rolling_max_fft * self.screen_height as f32;
-        scaled_value.max(0.0) // Ensure non-negative
-    }
-    fn flip_height(&self, height: f32) -> f32 {
-        ((self.screen_height - 1) as f32 - height).max(0.0)
+
+        // Clamp to the animator's displayable range.
+        // Ensure target is at least 1.0 if that's a desired minimum visual.
+        scaled_bin_val.clamp(1.0, self.animator.get_max_display_value() as f32)
     }
 
-    fn get_bin_average_value(&self, bins: &[f32], bar_number: usize) -> f32 {
-        let avg_val = match self.bin_spread_mode {
-            BinSpreadMode::Even => {
-                // Evenly spread bins
-                let start_index = bar_number * self.group_size;
-                let end_index = cmp::min(start_index + self.group_size, bins.len());
-                if start_index < end_index {
-                    let sum: f32 = bins[start_index..end_index].iter().sum();
-                    sum / (end_index - start_index) as f32
-                } else {
-                    0.0
-                }
-            }
-            BinSpreadMode::Exponential => {
-                // Exponentially spread bins
-                let exp_factor = 2.0; // Adjust this factor to control the exponential spread
-                let max_bar = self.num_bars as f32;
-                let max_bin = bins.len() as f32;
-            
-                // Normalize the exponential indices to fit within the range of bins
-                let start_index = ((exp_factor.powf(bar_number as f32 / max_bar) - 1.0) / (exp_factor - 1.0) * max_bin) as usize;
-                let end_index = ((exp_factor.powf((bar_number + 1) as f32 / max_bar) - 1.0) / (exp_factor - 1.0) * max_bin) as usize;
-            
-                // Clamp indices to valid range
-                let start_index = start_index.min(bins.len());
-                let end_index = end_index.min(bins.len());
-            
-                if start_index < end_index {
-                    let sum: f32 = bins[start_index..end_index].iter().sum();
-                    sum / (end_index - start_index) as f32
-                } else {
-                    0.0
-                }
-            }
-        };
-        avg_val
+    fn apply_rolling_max_scaling(&self, value: f32) -> f32 {
+        // Scale the value based on the rolling max FFT relative to screen height for full dynamic range
+        if self.rolling_max_fft <= 0.0 { return 0.0; } // Avoid division by zero or negative
+        let scaled_value = (value / self.rolling_max_fft) * self.screen_height as f32;
+        scaled_value.max(0.0) // Ensure non-negative
     }
 
     fn get_bin_value(&self, bins: &[f32], bar_number: usize) -> f32 {
-        let bin_val = match self.bin_spread_mode {
-            BinSpreadMode::Even => {
-                let start_index = bar_number * self.group_size;
-                let end_index = cmp::min(start_index + self.group_size, bins.len());
-                if start_index < end_index {
-                    self.run_bin_calculation(bins, start_index, end_index)
-                } else {
-                    0.0
-                }
-            }
-            BinSpreadMode::Exponential => {
-                let exp_factor = 2.0;
-                let max_bar = self.num_bars as f32;
-                let max_bin = bins.len() as f32;
-
-                let start_index = ((exp_factor.powf(bar_number as f32 / max_bar) - 1.0)
-                    / (exp_factor - 1.0)
-                    * max_bin) as usize;
-                let end_index = ((exp_factor.powf((bar_number + 1) as f32 / max_bar) - 1.0)
-                    / (exp_factor - 1.0)
-                    * max_bin) as usize;
-
-                let start_index = start_index.min(bins.len());
-                let end_index = end_index.min(bins.len());
-
-                if start_index < end_index {
-                    self.run_bin_calculation(bins, start_index, end_index)
-                } else {
-                    0.0
-                }
-            }
-        };
-        bin_val
+        let (start_index, end_index) = self.sba.band_ranges()[bar_number];
+        self.run_bin_calculation(bins, start_index as usize, end_index as usize)
     }
 
     fn run_bin_calculation(&self, bins: &[f32], start_index: usize, end_index: usize) -> f32 {
-        match self.bin_calculation_mode {
-            BinCalculationMode::Average => {
-                bins[start_index..end_index].iter().cloned().sum::<f32>()
-                    / (end_index - start_index) as f32
-            }
-            BinCalculationMode::Max => bins[start_index..end_index]
-                .iter()
-                .cloned()
-                .fold(0.0, f32::max),
-            BinCalculationMode::RMS => {
-                let sum_of_squares = bins[start_index..end_index]
-                    .iter()
-                    .map(|&x| x * x)
-                    .sum::<f32>();
-                (sum_of_squares / (end_index - start_index) as f32).sqrt()
-            }
-            BinCalculationMode::WeightedAverage => {
-                let weighted_sum: f32 = bins[start_index..end_index]
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &x)| x * (i as f32 + 1.0)) // Example linear weight
-                    .sum();
-                weighted_sum / (end_index - start_index) as f32
-            }
-        }
+        self.bss.calculate(&bins[start_index..end_index])
     }
-    
-     
+
     fn update_max_rolling_fft(&mut self, bins: &[f32]) {
-        
         let max_in_current_bins = bins.iter().cloned().fold(0.0, f32::max);
         if max_in_current_bins > self.rolling_max_fft {
             self.rolling_max_fft = max_in_current_bins.max(self.rolling_max_fft);
         } else {
-            self.rolling_max_fft = self.rolling_max_fft * self.rolling_max_decay
+            self.rolling_max_fft = self.rolling_max_fft * self.rolling_max_decay;
         };
-        
     }
+
     fn get_all_bins_average(&self, bins: &[f32]) -> f32 {
         let sum: f32 = bins.iter().copied().sum();
         let avg = sum / bins.len() as f32;
@@ -397,82 +253,99 @@ impl BarGragh {
     {
         self.update_max_rolling_fft(bins);
         self.current_bin_average = self.get_all_bins_average(bins);
-        #[cfg(feature = "std")]
-        {
-            std::println!("BEGIN UPDATE ------ Interpolation Counter: {}", self.interpolation_counter);
-            std::println!("Bins length: {}, Num_bars: {}, Group size: {}", bins.len(), self.num_bars, self.group_size);
-            std::println!("Initial previous_heights: {:?}", self.previous_heights);
-            std::println!("Initial target_heights: {:?}", self.target_heights);
-            std::println!("Initial current_heights: {:?}", self.current_heights);
-        }
 
-        self.log_counter += 1;
-        if self.log_counter >= 60 {
+        // Optional: Log counter for other purposes
+        self.log_counter = self.log_counter.wrapping_add(1);
+        if self.log_counter >= 200 { // Increased logging interval
             #[cfg(feature = "logging")]
             info!(
-                "Initial current_heights: {:?}",
-                defmt::Debug2Format(&self.current_heights)
+                "Animator current_values_display: {:?}",
+                defmt::Debug2Format(&self.animator.get_current_values_display())
             );
-            self.log_counter = 0; // Reset the counter
+            self.log_counter = 0;
+        }
+        #[cfg(feature = "std")]
+        {
+             std::println!(
+                "BEGIN BarGragh UPDATE ------ Step Counter: {}", self.step_counter
+            );
+             std::println!(
+                "Animator State: Counter={}, Steps={}, IsNewCycle={}",
+                self.animator.get_interpolation_counter(),
+                self.animator.get_interpolation_steps(),
+                self.animator.is_new_cycle_start()
+            );
+            std::println!(
+                "Bins length: {}, Num_bars: {}",
+                bins.len(),
+                self.num_bars,
+            );
+            std::println!("Rolling Max FFT: {:.2}, Current Bin Avg: {:.4}", self.rolling_max_fft, self.current_bin_average);
         }
 
-        // Step 1: Update target heights if it's the start of an interpolation cycle.
-        if self.interpolation_counter == 0 {
-            // Current target_heights become the previous_heights for the new interpolation.
-            core::mem::swap(&mut self.previous_heights, &mut self.target_heights);
-            // Now self.previous_heights holds values from the end of the last cycle.
-            // self.target_heights (which was old previous) will be filled with new targets.
 
-            // Calculate new target_heights from the input `bins`.
-            if self.current_bin_average < 0.002 {
-                // decay bar heights to 0
+        // Step 1: If animator is ready for new targets, calculate and set them.
+        if self.animator.is_new_cycle_start() {
+            let mut new_targets_for_animator = vec![0.0f32; self.num_bars];
+
+            if self.current_bin_average < 0.002 { // Threshold for low signal
+                // If signal is very low, make targets decay to a minimum visible height (e.g., 1.0)
                 for i in 0..self.num_bars {
-                    self.target_heights[i] = self.target_heights[i] * self.rolling_max_decay
+                    // Option 1: Decay towards a floor value
+                    // let current_anim_target = self.animator.get_target_values_calc().get(i).copied().unwrap_or(1.0);
+                    // new_targets_for_animator[i] = (current_anim_target * self.rolling_max_decay).max(1.0);
+                    // Option 2: Simpler, just set to a minimum floor if signal is low
+                     new_targets_for_animator[i] = 1.0f32;
                 }
+                 #[cfg(feature = "std")]
+                 std::println!("Low signal: Decaying targets.");
             } else {
+                // Calculate new targets from FFT bins
                 for i in 0..self.num_bars {
-                    self.update_bar_target_height(bins, i);
+                    new_targets_for_animator[i] = self.update_bar_target_height(bins, i);
                 }
             }
+            self.animator.set_new_targets(&new_targets_for_animator);
             #[cfg(feature = "std")]
             {
-                std::println!("NEW TARGETS LOADED (counter is 0):");
-                std::println!("  Previous (old targets): {:?}", self.previous_heights);
-                std::println!("  Target (new from bins): {:?}", self.target_heights);
+                std::println!("ANIMATOR: NEW TARGETS SET:");
+                std::println!("  Previous (from animator): {:?}", self.animator.get_previous_values_calc());
+                std::println!("  New Targets (to animator): {:?}", self.animator.get_target_values_calc());
             }
         }
 
-        // Step 2: Calculate interpolation progress for the current frame.
-        let eased_progress = self.calculate_eased_progress();
+        // Step 2: Tell the animator to update its state for this frame.
+        // This calculates eased progress, interpolates values, and advances its internal counter.
+        // The returned value is a reference to animator's internal current_values_display.
+        let _current_display_heights_ref = self.animator.update_and_get_current_values();
 
-        // Step 3: Interpolate current heights towards the target heights.
-        // If interpolation_counter was 0 (and steps > 1), eased_progress is 0.
-        // This correctly sets current_heights[i] = previous_heights[i].
-        // If steps are 0 or 1, or at end of cycle, eased_progress is 1, setting current = target.
-        self.interpolate_current_heights(eased_progress);
-        
         #[cfg(feature = "std")]
         {
-            std::println!("Interpolating: Progress_raw_calc = {:.2} (counter {} / steps {}) -> Eased_Progress = {:.2}",
-                if self.interpolation_steps <= 1 { 1.0 } else { self.interpolation_counter as f32 / (self.interpolation_steps -1).max(1) as f32},
-                self.interpolation_counter, self.interpolation_steps, eased_progress
+            std::println!(
+                "ANIMATOR: Updated. Counter_now = {}, Display[0]={:.2}",
+                self.animator.get_interpolation_counter(),
+                self.animator.get_current_values_display()[0]
             );
-            std::println!("  Current Heights after interpolation: {:?}", self.current_heights);
         }
 
+        // Step 3: Draw the bars using the animator's current display values.
+        // draw_bars internally accesses self.animator.current_values_display
+        fb.fill_solid(&fb.bounding_box(), BLACK)?; // Clear screen before drawing
+        self.draw_bars(fb)?;
 
-        // Step 4: Draw the bars onto the framebuffer.
-        self.draw_bars(fb, 7)?; // Assuming bar_width is 7, make this configurable if needed
+        // Step 4: Update BarGragh's own non-animation counters/state
+        self.wheel_val = self.wheel_val.wrapping_add(1);
+        self.step_counter = self.step_counter.wrapping_add(1); // General frame counter
 
-        // Step 5: Update animation state for the next frame.
-        self.update_animation_state();
-        
         #[cfg(feature = "std")]
         {
-            std::println!("END UPDATE ------ Next Interpolation Counter: {}", self.interpolation_counter);
+            std::println!(
+                "END BarGragh UPDATE ------ Next Animator Counter Potential: {}", self.animator.get_interpolation_counter()
+            );
             std::println!("-----------------------------------------------------");
         }
-
         Ok(())
     }
+
 }
+

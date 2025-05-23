@@ -6,6 +6,11 @@ use alloc::{vec, vec::Vec};
 #[allow(unused_imports)] 
 use micromath::F32Ext;
 
+#[cfg(feature = "logging")]
+use defmt::info;
+#[cfg(feature = "logging")]
+use defmt_rtt as _;
+
 pub enum BandSpreadModeConfig {
     Even,
     Exponential { exp_factor: f32 },
@@ -60,22 +65,29 @@ impl SpectralBandAggregator {
         band_spread_config: BandSpreadModeConfig,
     ) -> Self {
         if !is_valid_input_band_size(number_of_bands_in as u32) {
-            panic!(
+            #[cfg(feature = "logging")]
+            info!(
                 "Invalid number of input bands: {}. Must be one of {:?}.",
                 number_of_bands_in, VALID_BAND_SIZES_IN
             );
         }
         if !is_valid_output_band_size(number_of_bands_out as u32) {
-            panic!(
+            #[cfg(feature = "logging")]
+            info!(
                 "Invalid number of output bands: {}. Must be one of {:?}.",
                 number_of_bands_out, VALID_BAND_SIZES_OUT
             );
+            panic!("Invalid number of output bands");
         }
         if number_of_bands_out == 0 {
-            panic!("Number of bands out must be greater than 0");
+            #[cfg(feature = "logging")]
+            info!("Number of bands out must be greater than 0");
         }
         if number_of_bands_in < number_of_bands_out {
-            panic!("Number of bands in must be greater than or equal to number of bands out");
+            #[cfg(feature = "logging")]
+            info!(
+                "Number of bands in must be greater than or equal to number of bands out"
+            );
         }
 
         let active_band_ranges = match &band_spread_config {
@@ -84,10 +96,8 @@ impl SpectralBandAggregator {
             }
             BandSpreadModeConfig::Exponential { exp_factor } => {
                 if *exp_factor <= 0.0 {
-                    panic!(
-                        "Exponential factor must be greater than 0. Got: {}",
-                        exp_factor
-                    );
+                    #[cfg(feature = "logging")]
+                    info!("Exponential factor must be greater than 0. Got: {}", exp_factor);
                 }
                 // (exp_factor - 1.0) being zero is handled in the calculation by effectively switching to linear.
                 Self::calculate_exponential_spread_bands(
@@ -156,7 +166,6 @@ impl SpectralBandAggregator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
 
     #[test]
     fn test_new_spectral_band_aggregator() {

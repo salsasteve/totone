@@ -1,6 +1,5 @@
-
 #![no_std]
-#[allow(unused_imports)] 
+#[allow(unused_imports)]
 use micromath::F32Ext;
 
 pub enum BinSummaryStrategy {
@@ -10,7 +9,6 @@ pub enum BinSummaryStrategy {
     RMS,             // Use the root mean square of the bins
 }
 
-
 impl BinSummaryStrategy {
     pub fn calculate(&self, bin_slice: &[f32]) -> f32 {
         if bin_slice.is_empty() {
@@ -19,12 +17,12 @@ impl BinSummaryStrategy {
         let num_elements = bin_slice.len() as f32;
 
         match *self {
-            BinSummaryStrategy::Average => {
-                bin_slice.iter().cloned().sum::<f32>() / num_elements
-            }
-            BinSummaryStrategy::Max => {
-                bin_slice.iter().cloned().fold(f32::NEG_INFINITY, f32::max).max(0.0)
-            }
+            BinSummaryStrategy::Average => bin_slice.iter().cloned().sum::<f32>() / num_elements,
+            BinSummaryStrategy::Max => bin_slice
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max)
+                .max(0.0),
             BinSummaryStrategy::RMS => {
                 let sum_of_squares: f32 = bin_slice.iter().map(|&x| x * x).sum();
                 (sum_of_squares / num_elements).sqrt()
@@ -37,7 +35,11 @@ impl BinSummaryStrategy {
                     weighted_sum += x * weight;
                     total_weight += weight;
                 }
-                if total_weight == 0.0 { 0.0 } else { weighted_sum / total_weight }
+                if total_weight == 0.0 {
+                    0.0
+                } else {
+                    weighted_sum / total_weight
+                }
             }
         }
     }
@@ -57,6 +59,9 @@ mod tests {
         let left = BinSummaryStrategy::RMS.calculate(&data);
         let right = (55.0 / 5.0).sqrt();
         assert_abs_diff_eq!(left, right, epsilon = 0.06);
-        assert_eq!(BinSummaryStrategy::WeightedAverage.calculate(&data), 3.6666667);
+        assert_eq!(
+            BinSummaryStrategy::WeightedAverage.calculate(&data),
+            3.6666667
+        );
     }
 }

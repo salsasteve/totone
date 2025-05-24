@@ -3,7 +3,7 @@ extern crate alloc;
 
 use alloc::{vec, vec::Vec};
 
-#[allow(unused_imports)] 
+#[allow(unused_imports)]
 use micromath::F32Ext;
 
 #[cfg(feature = "logging")]
@@ -85,9 +85,7 @@ impl SpectralBandAggregator {
         }
         if number_of_bands_in < number_of_bands_out {
             #[cfg(feature = "logging")]
-            info!(
-                "Number of bands in must be greater than or equal to number of bands out"
-            );
+            info!("Number of bands in must be greater than or equal to number of bands out");
         }
 
         let active_band_ranges = match &band_spread_config {
@@ -97,7 +95,10 @@ impl SpectralBandAggregator {
             BandSpreadModeConfig::Exponential { exp_factor } => {
                 if *exp_factor <= 0.0 {
                     #[cfg(feature = "logging")]
-                    info!("Exponential factor must be greater than 0. Got: {}", exp_factor);
+                    info!(
+                        "Exponential factor must be greater than 0. Got: {}",
+                        exp_factor
+                    );
                 }
                 // (exp_factor - 1.0) being zero is handled in the calculation by effectively switching to linear.
                 Self::calculate_exponential_spread_bands(
@@ -186,7 +187,11 @@ mod tests {
 
     #[test]
     fn test_calculate_exponential_spread_bands() {
-        let sba = SpectralBandAggregator::new(32, 4, BandSpreadModeConfig::Exponential{exp_factor: 7.0});
+        let sba = SpectralBandAggregator::new(
+            32,
+            4,
+            BandSpreadModeConfig::Exponential { exp_factor: 7.0 },
+        );
         let band_ranges = sba.band_ranges();
         assert_eq!(band_ranges.len(), 4);
         assert_eq!(band_ranges[0], (0, 3));

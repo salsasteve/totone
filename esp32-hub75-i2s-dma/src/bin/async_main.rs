@@ -39,7 +39,6 @@ use esp_hub75::{
 use micro_viz::BarGragh;
 
 use embassy_sync::channel::Channel;
-use micro_dsp::process_frame;
 use micromath::F32Ext;
 use static_cell::StaticCell;
 
@@ -295,8 +294,8 @@ async fn microphone_reader(
             // Signal the data is ready for processing
             signal.signal(samples);
 
-            // Simple output of first few values for debugging
-            // info!("Samples: {:?}, {:?}, {:?}", samples[0], samples[1], samples[2]);
+            #[cfg(feature = "logging")]
+            info!("Samples: {:?}, {:?}, {:?}", samples[0], samples[1], samples[2]);
         }
     }
 }

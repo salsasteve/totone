@@ -1,11 +1,11 @@
 ```mermaid
 graph TD
     %% Define the main components
-    totone["totone\n(Embedded control & FFT logic)"]
-    esp32["esp32-hub75-i2s-dma\n(Display driver)"]
-    dsp["micro-dsp\n(no_std library)"]
-    viz["micro-viz\n(no_std library)"]
-    sim["micro-viz-simulator\n(Testing & simulation)"]
+    totone["totone (Embedded control & FFT logic)"]
+    esp32["esp32-hub75-i2s-dma (Display driver)"]
+    dsp["micro-dsp (no_std library)"]
+    viz["micro-viz (no_std library)"]
+    sim["micro-viz-simulator (Testing & simulation)"]
     
     %% Define relationships
     totone -->|uses| dsp
@@ -28,11 +28,11 @@ graph TD
     class sim tester;
     
     %% Add descriptions
-    dspLabel["micro-dsp:\n- no_std compatible\n- Unit testable\n- Hardware-independent"]
-    vizLabel["micro-viz:\n- no_std compatible\n- Unit testable\n- Hardware-independent"]
-    totoneLabel["totone:\n- Embedded control\n- FFT logic implementation"]
-    esp32Label["esp32-hub75-i2s-dma:\n- Display driver\n- Hardware specific"]
-    simLabel["micro-viz-simulator:\n- Testing environment\n- Simulates micro-viz behavior"]
+    dspLabel["micro-dsp: - no_std compatible - Unit testable - Hardware-independent"]
+    vizLabel["micro-viz: - no_std compatible - Unit testable - Hardware-independent"]
+    totoneLabel["totone: - Embedded control - FFT logic implementation"]
+    esp32Label["esp32-hub75-i2s-dma: - Display driver - Hardware specific"]
+    simLabel["micro-viz-simulator: - Testing environment - Simulates micro-viz behavior"]
     
     dsp --- dspLabel
     viz --- vizLabel

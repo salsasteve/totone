@@ -3,7 +3,7 @@ extern crate alloc;
 
 use alloc::{vec, vec::Vec};
 
-#[allow(unused_imports)] 
+#[allow(unused_imports)]
 use micromath::F32Ext;
 
 #[cfg(feature = "std")]
@@ -49,9 +49,8 @@ impl SpectrumValueAnimator {
         interpolation_steps: u32,
         max_display_value: u16,
     ) -> Self {
-        let initial_value_display_clamped = initial_value_calc
-            .max(0.0)
-            .min(max_display_value as f32) as u16;
+        let initial_value_display_clamped =
+            initial_value_calc.max(0.0).min(max_display_value as f32) as u16;
 
         Self {
             previous_values_calc: vec![initial_value_calc; num_values],
@@ -87,7 +86,8 @@ impl SpectrumValueAnimator {
 
         // The values that were the target of the *completed* animation cycle
         // now become the starting point (previous_values_calc) for the new cycle.
-        self.previous_values_calc.copy_from_slice(&self.target_values_calc);
+        self.previous_values_calc
+            .copy_from_slice(&self.target_values_calc);
 
         // Update self.target_values_calc with the new incoming targets.
         self.target_values_calc.copy_from_slice(new_targets_calc);
@@ -121,7 +121,9 @@ impl SpectrumValueAnimator {
         // If interpolation_steps is 0, counter remains 0 (progress is always 1.0).
         // If counter reaches interpolation_steps - 1, it stays there until reset by set_new_targets,
         // indicating the animation to the current target is complete.
-        if self.interpolation_steps > 0 && self.interpolation_counter < self.interpolation_steps.saturating_sub(1) {
+        if self.interpolation_steps > 0
+            && self.interpolation_counter < self.interpolation_steps.saturating_sub(1)
+        {
             self.interpolation_counter += 1;
         }
         &self.current_values_display
@@ -137,7 +139,8 @@ impl SpectrumValueAnimator {
         }
         // A new cycle starts if the counter is at 0 (very first frame, or just reset by set_new_targets)
         // OR if the counter has reached the end of the previous interpolation period.
-        self.interpolation_counter == 0 || self.interpolation_counter >= self.interpolation_steps.saturating_sub(1)
+        self.interpolation_counter == 0
+            || self.interpolation_counter >= self.interpolation_steps.saturating_sub(1)
     }
 
     /// Easing function: ease-out quadratic. `t` is progress from 0.0 to 1.0.
@@ -156,9 +159,8 @@ impl SpectrumValueAnimator {
             // If 1 step, interpolation_counter is 0. (steps-1) is 0.
             // Raw progress is 0/0 (NaN) or 1.0 depending on interpretation.
             // Effectively, it should snap, so progress is 1.0.
-             1.0
-        }
-        else {
+            1.0
+        } else {
             // For interpolation_steps > 1
             // self.interpolation_counter ranges from 0 to self.interpolation_steps - 1.
             // Division by (self.interpolation_steps - 1) makes raw progress span [0.0, 1.0].
@@ -184,7 +186,8 @@ impl SpectrumValueAnimator {
         for i in 0..self.num_values {
             let prev_calc = self.previous_values_calc[i];
             let target_calc = self.target_values_calc[i];
-            let interpolated_calc = prev_calc * (1.0 - eased_progress) + target_calc * eased_progress;
+            let interpolated_calc =
+                prev_calc * (1.0 - eased_progress) + target_calc * eased_progress;
 
             let display_val = interpolated_calc
                 .max(0.0) // Ensure non-negative before casting
@@ -215,9 +218,7 @@ impl SpectrumValueAnimator {
     pub fn get_current_values_display(&self) -> &Vec<u16> {
         &self.current_values_display
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -235,7 +236,10 @@ mod tests {
 
         // Set new targets
         animator.set_new_targets(&[10.0, 20.0, 30.0, 40.0, 50.0]);
-        assert_eq!(animator.target_values_calc, vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+        assert_eq!(
+            animator.target_values_calc,
+            vec![10.0, 20.0, 30.0, 40.0, 50.0]
+        );
 
         // Update and get current values
         let current_values = animator.update_and_get_current_values();
@@ -248,8 +252,7 @@ mod tests {
         let initial_val = 0.0;
         let steps = 10;
         let max_display = 100;
-        let mut animator =
-            SpectrumValueAnimator::new(num_values, initial_val, steps, max_display);
+        let mut animator = SpectrumValueAnimator::new(num_values, initial_val, steps, max_display);
 
         // Test initial state
         assert_eq!(animator.previous_values_calc, vec![initial_val; num_values]);
@@ -259,19 +262,36 @@ mod tests {
             vec![initial_val as u16; num_values]
         );
         assert_eq!(animator.interpolation_steps, steps);
-        assert_eq!(animator.get_interpolation_counter(), 0, "Initial counter should be 0");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "Initial counter should be 0"
+        );
         assert_eq!(animator.num_values, num_values);
         assert_eq!(animator.max_display_value, max_display);
-        assert!(animator.is_new_cycle_start(), "Should be new cycle at start");
-
+        assert!(
+            animator.is_new_cycle_start(),
+            "Should be new cycle at start"
+        );
 
         // Set new targets
         let new_targets = vec![10.0, 20.0, 30.0, 40.0, 50.0];
         animator.set_new_targets(&new_targets);
-        assert_eq!(animator.previous_values_calc, vec![initial_val; num_values], "Previous should be old targets after set_new_targets");
+        assert_eq!(
+            animator.previous_values_calc,
+            vec![initial_val; num_values],
+            "Previous should be old targets after set_new_targets"
+        );
         assert_eq!(animator.target_values_calc, new_targets);
-        assert_eq!(animator.get_interpolation_counter(), 0, "Counter should reset after set_new_targets");
-        assert!(animator.is_new_cycle_start(), "Should be new cycle after set_new_targets");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "Counter should reset after set_new_targets"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "Should be new cycle after set_new_targets"
+        );
     }
 
     #[test]
@@ -283,31 +303,59 @@ mod tests {
         assert!(animator.is_new_cycle_start(), "Initial cycle start");
 
         animator.set_new_targets(&[100.0]); // Set some targets to start a cycle
-        assert_eq!(animator.get_interpolation_counter(), 0, "After set_new_targets");
-        assert!(animator.is_new_cycle_start(), "Cycle start after set_new_targets");
-
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "After set_new_targets"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "Cycle start after set_new_targets"
+        );
 
         // First update
         animator.update_and_get_current_values();
         assert_eq!(animator.get_interpolation_counter(), 1, "After 1st update");
-        assert!(!animator.is_new_cycle_start(), "Not new cycle after 1st update");
-
+        assert!(
+            !animator.is_new_cycle_start(),
+            "Not new cycle after 1st update"
+        );
 
         // Second update (counter should be steps - 1)
         animator.update_and_get_current_values();
-        assert_eq!(animator.get_interpolation_counter(), 2, "After 2nd update (steps - 1)");
-        assert!(animator.is_new_cycle_start(), "New cycle should start when counter is at steps - 1");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            2,
+            "After 2nd update (steps - 1)"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "New cycle should start when counter is at steps - 1"
+        );
 
         // Third update (counter should remain at steps - 1)
         animator.update_and_get_current_values();
-        assert_eq!(animator.get_interpolation_counter(), 2, "After 3rd update (should stay at steps - 1)");
-        assert!(animator.is_new_cycle_start(), "Still new cycle as animation is complete");
-
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            2,
+            "After 3rd update (should stay at steps - 1)"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "Still new cycle as animation is complete"
+        );
 
         // Reset with new targets
         animator.set_new_targets(&[50.0]);
-        assert_eq!(animator.get_interpolation_counter(), 0, "Counter reset after 2nd set_new_targets");
-        assert!(animator.is_new_cycle_start(), "New cycle after 2nd set_new_targets");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "Counter reset after 2nd set_new_targets"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "New cycle after 2nd set_new_targets"
+        );
     }
 
     #[test]
@@ -315,25 +363,50 @@ mod tests {
         let steps = 0; // Instant interpolation
         let mut animator = SpectrumValueAnimator::new(1, 0.0, steps, 100);
 
-        assert_eq!(animator.get_interpolation_counter(), 0, "Initial counter for 0 steps");
-        assert!(animator.is_new_cycle_start(), "Initial: 0 steps means always new cycle");
-
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "Initial counter for 0 steps"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "Initial: 0 steps means always new cycle"
+        );
 
         animator.set_new_targets(&[100.0]);
-        assert_eq!(animator.get_interpolation_counter(), 0, "After set_new_targets for 0 steps");
-        assert!(animator.is_new_cycle_start(), "After set_new_targets: 0 steps means always new cycle");
-
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "After set_new_targets for 0 steps"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "After set_new_targets: 0 steps means always new cycle"
+        );
 
         animator.update_and_get_current_values();
         // For interpolation_steps == 0, the counter does not increment:
         // `if self.interpolation_steps > 0 && ...` will be false.
-        assert_eq!(animator.get_interpolation_counter(), 0, "After update for 0 steps, counter stays 0");
-        assert!(animator.is_new_cycle_start(), "After update: 0 steps means always new cycle");
-
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "After update for 0 steps, counter stays 0"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "After update: 0 steps means always new cycle"
+        );
 
         animator.update_and_get_current_values();
-        assert_eq!(animator.get_interpolation_counter(), 0, "After second update for 0 steps, counter stays 0");
-        assert!(animator.is_new_cycle_start(), "After 2nd update: 0 steps means always new cycle");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "After second update for 0 steps, counter stays 0"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "After 2nd update: 0 steps means always new cycle"
+        );
     }
 
     #[test]
@@ -341,11 +414,22 @@ mod tests {
         let steps = 1; // Single step interpolation
         let mut animator = SpectrumValueAnimator::new(1, 0.0, steps, 100);
 
-        assert_eq!(animator.get_interpolation_counter(), 0, "Initial counter for 1 step");
-        assert!(animator.is_new_cycle_start(), "Initial: 1 step means new cycle (counter 0 >= steps-1 (0))");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "Initial counter for 1 step"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "Initial: 1 step means new cycle (counter 0 >= steps-1 (0))"
+        );
 
         animator.set_new_targets(&[100.0]);
-        assert_eq!(animator.get_interpolation_counter(), 0, "After set_new_targets for 1 step");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "After set_new_targets for 1 step"
+        );
         assert!(animator.is_new_cycle_start(), "Cycle start for 1 step");
 
         // In `update_and_get_current_values`:
@@ -353,14 +437,28 @@ mod tests {
         // The condition `self.interpolation_counter < 0` (since counter is 0) will be false.
         // So, the counter should not increment.
         animator.update_and_get_current_values();
-        assert_eq!(animator.get_interpolation_counter(), 0, "After 1st update for 1 step, counter stays 0");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "After 1st update for 1 step, counter stays 0"
+        );
         // is_new_cycle_start checks `self.interpolation_counter >= self.interpolation_steps.saturating_sub(1)`
         // which is `0 >= (1-1)`, so `0 >= 0`, which is true.
-        assert!(animator.is_new_cycle_start(), "After 1st update: 1 step means new cycle (animation complete)");
+        assert!(
+            animator.is_new_cycle_start(),
+            "After 1st update: 1 step means new cycle (animation complete)"
+        );
 
         animator.update_and_get_current_values();
-        assert_eq!(animator.get_interpolation_counter(), 0, "After 2nd update for 1 step, counter stays 0");
-        assert!(animator.is_new_cycle_start(), "After 2nd update: 1 step, new cycle");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            0,
+            "After 2nd update for 1 step, counter stays 0"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "After 2nd update: 1 step, new cycle"
+        );
     }
 
     #[test]
@@ -386,9 +484,15 @@ mod tests {
         // raw_progress = 0 / (2-1) = 0.0. eased_progress = ease_out_quad(0.0) = 0.0
         // interpolated = 0.0 * (1-0) + 100.0 * 0 = 0
         assert_eq!(values1[0], 0, "Values after 1st update (progress 0)");
-        assert_eq!(animator.get_interpolation_counter(), 1, "Counter after 1st update");
-        assert!(animator.is_new_cycle_start(), "Cycle is complete after 1st update, counter is at steps-1");
-
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            1,
+            "Counter after 1st update"
+        );
+        assert!(
+            animator.is_new_cycle_start(),
+            "Cycle is complete after 1st update, counter is at steps-1"
+        );
 
         // Update 2: counter will be 1 for calculation, then becomes 1 (max for steps=2)
         let values2 = animator.update_and_get_current_values();
@@ -398,14 +502,22 @@ mod tests {
         assert_eq!(values2[0], 100, "Values after 2nd update (progress 1)");
         // For steps=2, counter increments when counter (1) < steps.saturating_sub(1) (which is 1).
         // 1 < 1 is false. So counter should not increment. It remains 1.
-        assert_eq!(animator.get_interpolation_counter(), 1, "Counter after 2nd update (max for steps=2)");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            1,
+            "Counter after 2nd update (max for steps=2)"
+        );
         assert!(animator.is_new_cycle_start());
 
         // Update 3: counter will be 1 for calculation, remains 1
         let values3 = animator.update_and_get_current_values();
         // Eased progress for counter 1, steps 2 -> 1.0
         assert_eq!(values3[0], 100, "Values after 3rd update (still at target)");
-        assert_eq!(animator.get_interpolation_counter(), 1, "Counter after 3rd update (still max)");
+        assert_eq!(
+            animator.get_interpolation_counter(),
+            1,
+            "Counter after 3rd update (still max)"
+        );
         assert!(animator.is_new_cycle_start());
     }
 }

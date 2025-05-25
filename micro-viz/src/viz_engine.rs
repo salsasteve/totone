@@ -11,24 +11,25 @@ const BAR_SPACING: u32 = 1;
 #[allow(unused_imports)]
 use micromath::F32Ext;
 
-use crate::bin_summary_strategy::*;
+use crate::audio_processor::*;
 use crate::renderer::*;
 use crate::spectral_band_aggregator::*;
 use crate::spectrum_value_animator::*;
+use crate::bin_summary_strategy::*;
 
-pub struct BarGragh {
-    wheel_val: u8,
-    step_counter: u32,
-    num_bars: usize,
+pub struct VizEngine<R: Renderer> {
+    frame_counter: u32,
+    num_elements: usize,
     log_counter: u8,
     current_bin_average: f32,
     sba: SpectralBandAggregator,
     animator: SpectrumValueAnimator,
-    renderer: BarGraphRenderer,
+    renderer: R,
+    audio_processor: AudioProcessor,
 }
 
-impl BarGragh {
-    pub fn new(screen_width: u16, screen_height: u16, bar_width: u16) -> Self {
+impl <R: Renderer> VizEngine<R> {
+    pub fn new(screen_width: u16, screen_height: u16, bar_width: u16, renderer:R, interpolation_steps: u32) -> Self {
         #[cfg(feature = "std")]
         std::println!(
             "BarGragh::new called with screen_width: {}, screen_height: {}, bar_width: {}",
@@ -49,35 +50,32 @@ impl BarGragh {
             BandSpreadModeConfig::Exponential { exp_factor: 7.0 },
         );
 
-        let initial_bar_height_calc = 1.0f32;
-        let animator_interpolation_steps = 10;
+
         let animator_max_display_height = screen_height.saturating_sub(1).max(1);
 
         let animator = SpectrumValueAnimator::new(
             num_bars,
-            initial_bar_height_calc,
-            animator_interpolation_steps,
+            interpolation_steps,
             animator_max_display_height,
+
         );
-        let renderer = BarGraphRenderer::new(
-            screen_width,
-            screen_height,
-            bar_width,
+
+
+        let audio_processor = AudioProcessor::new(
             num_bars,
-            ColorMode::ShiftingSpectrum,
-            0.50,
-            BinSummaryStrategy::Max,
+            0.95, // Rolling max decay factor
+            BinSummaryStrategy::Average, // Default bin summary strategy
         );
 
         Self {
-            wheel_val: 0,
-            step_counter: 0,
+            frame_counter: 0,
             num_bars,
             log_counter: 0,
             current_bin_average: 0.0,
             sba,
             animator,
             renderer,
+            audio_processor,
         }
     }
 
@@ -92,7 +90,7 @@ impl BarGragh {
         D: DrawTarget<Color = Rgb888>,
     {
         let band_ranges = self.sba.band_ranges();
-        self.renderer.update_rolling_max_per_bar(bins, band_ranges);
+        self.audio_processor.update_rolling_max_per_bar(bins, band_ranges);
         self.current_bin_average = self.get_all_bins_average(bins);
 
         // Optional: Log counter for other purposes
@@ -146,7 +144,7 @@ impl BarGragh {
                 // Calculate new targets from FFT bins
                 let max_display_value = self.animator.get_max_display_value() as f32;
                 for i in 0..self.num_bars {
-                    new_targets_for_animator[i] = self.renderer.update_bar_target_height(
+                    new_targets_for_animator[i] = self.audio_processor.update_bar_target_height(
                         bins,
                         i,
                         max_display_value,
@@ -190,8 +188,7 @@ impl BarGragh {
         self.renderer.draw(fb, current_height_val)?;
 
         // Step 4: Update BarGragh's own non-animation counters/state
-        self.wheel_val = self.wheel_val.wrapping_add(1);
-        self.step_counter = self.step_counter.wrapping_add(1); // General frame counter
+        self.frame_counter = self.frame_counter.wrapping_add(1); // General frame counter
 
         #[cfg(feature = "std")]
         {

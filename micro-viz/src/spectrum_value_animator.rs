@@ -1,6 +1,3 @@
-#![no_std]
-extern crate alloc;
-
 use alloc::{vec, vec::Vec};
 
 #[allow(unused_imports)]
@@ -40,23 +37,20 @@ impl SpectrumValueAnimator {
     ///
     /// # Arguments
     /// * `num_values`: The number of individual values to animate.
-    /// * `initial_value_calc`: The initial value for internal calculations (f32).
+    /// * `initial_value`: The initial value for internal calculations (f32).
     /// * `interpolation_steps`: The number of frames for the animation. 0 means instant.
     /// * `max_display_value`: The maximum value the `u16` display representation can take.
     pub fn new(
         num_values: usize,
-        initial_value_calc: f32,
         interpolation_steps: u32,
         max_display_value: u16,
     ) -> Self {
-        let initial_value_display_clamped =
-            initial_value_calc.max(0.0).min(max_display_value as f32) as u16;
 
         Self {
-            previous_values_calc: vec![initial_value_calc; num_values],
-            target_values_calc: vec![initial_value_calc; num_values],
-            current_values_display: vec![initial_value_display_clamped; num_values],
-            interpolation_steps: interpolation_steps.max(0), // Ensure non-negative
+            previous_values_calc: vec![1.0; num_values],
+            target_values_calc: vec![1.0; num_values],
+            current_values_display: vec![1; num_values],
+            interpolation_steps: interpolation_steps, // Ensure non-negative
             interpolation_counter: 0, // Start at the beginning of an interpolation cycle
             num_values,
             max_display_value,

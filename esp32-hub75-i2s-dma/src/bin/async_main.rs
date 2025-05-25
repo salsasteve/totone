@@ -7,6 +7,7 @@ extern crate alloc;
 use esp32_hub75_i2s_dma::audio::audio_processor;
 
 use core::mem::{size_of, MaybeUninit};
+use core::num;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use defmt::info;
@@ -36,9 +37,11 @@ use esp_hub75::{
     Hub75Pins,
 };
 
-use micro_viz::BarGragh;
+use micro_viz::{renderer, VizEngine};
+use micro_viz::renderer::BarGraphRenderer;
 
 use embassy_sync::channel::Channel;
+#[allow(unused_imports)]
 use micromath::F32Ext;
 use static_cell::StaticCell;
 
@@ -60,13 +63,8 @@ static REFRESH_RATE: AtomicU32 = AtomicU32::new(0);
 static RENDER_RATE: AtomicU32 = AtomicU32::new(0);
 static SIMPLE_COUNTER: AtomicU32 = AtomicU32::new(0);
 const HEAP_SIZE: usize = 32 * 1024;
-use embedded_graphics::pixelcolor::Rgb888;
-use embedded_graphics::prelude::Primitive;
-use embedded_graphics::prelude::Point;
-use embedded_graphics::primitives::Line;
-use embedded_graphics::primitives::PrimitiveStyle;
-use embedded_graphics::prelude::RgbColor;
-use embedded_graphics::Drawable;
+
+use micro_viz::color_strategy::GradientColor;
 
 // Type aliases for readability
 type Hub75Type = Hub75<'static, esp_hal::Async>;
@@ -163,11 +161,21 @@ async fn display_task(
         CriticalSectionRawMutex,
         [f32; 512],
         FFT_CHANNEL_CAPACITY,
-    >, // <-- Add receiver
+    >, 
 ) {
     info!("display_task: starting!");
+    let spectrum_color = GradientColor; // Initialize color strategy if needed
 
-    let mut demo = BarGragh::new(COLS as u16, ROWS as u16, BAR_WIDTH); // Adjust params if needed
+    let renderer = BarGraphRenderer::new(
+        COLS as u16,
+        ROWS as u16,
+        BAR_WIDTH,
+        COLS as usize / (BAR_WIDTH as usize + 1) as usize, // Calculate number of bars
+        spectrum_color, // Use the color strategy
+    );
+
+
+    let mut demo = VizEngine::new(COLS as u16, ROWS as u16, BAR_WIDTH,renderer); // Adjust params if needed
     let mut count = 0u32;
     let mut start = Instant::now();
     let mut current_fft_data: [f32; 512] = [0.0; 512];

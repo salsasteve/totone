@@ -1,2 +1,17 @@
+# Rust toolchain configuration for ESP32-S3.
+#
+# This file specifies the ESP Rust toolchain channel, which provides:
+# - Custom Rust compiler with ESP32-S3 target support
+# - Linker scripts for ESP32-S3 memory layout
+# - Standard library builds for embedded targets
+#
+# The ESP toolchain is installed via `espup`:
+#   cargo install espup
+#   espup install
+#   source $HOME/export-esp.sh
+#
+# For more information, see: https://esp-rs.github.io/book/
+
 [toolchain]
+# ESP toolchain channel provides Rust with ESP32-S3 support
 channel = "esp"

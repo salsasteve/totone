@@ -1,0 +1,23 @@
+# Cargo configuration for micro-viz-simulator
+#
+# This file configures linker paths for SDL2 on macOS with Homebrew.
+# SDL2 is required by embedded-graphics-simulator for the window display.
+#
+# Note: If linking still fails, you may need to set environment variables
+# in your shell before running cargo:
+#   export PKG_CONFIG_PATH="/opt/homebrew/opt/sdl2/lib/pkgconfig"
+#   export LIBRARY_PATH="/opt/homebrew/opt/sdl2/lib"
+
+[env]
+# Set PKG_CONFIG_PATH so pkg-config can find SDL2
+PKG_CONFIG_PATH = "/opt/homebrew/opt/sdl2/lib/pkgconfig"
+
+# For direct linking, set LIBRARY_PATH  
+LIBRARY_PATH = "/opt/homebrew/opt/sdl2/lib"
+
+[build]
+# Pass linker flags to find SDL2 library
+rustflags = [
+    "-L", "/opt/homebrew/opt/sdl2/lib",
+]
+

@@ -1,3 +1,12 @@
+//! Audio processing tasks for I2S microphone input and FFT computation.
+//!
+//! This module contains Embassy tasks that run on Core 0:
+//! - `microphone_reader`: Reads I2S audio samples via DMA
+//! - `audio_processor`: Performs FFT and sends bins to Core 1
+//!
+//! Communication between tasks uses Embassy signals and channels for
+//! lock-free inter-task data transfer.
+
 // src/audio.rs
 use crate::config::*;
 use defmt::{error, info, trace, warn};
@@ -17,6 +26,26 @@ use micro_dsp::process_frame; // Replace if using esp-dsp
 // pub(crate) type FftChannelType = Channel<CriticalSectionRawMutex, [f32; 512], FFT_CHANNEL_CAPACITY>;
 // pub(crate) static FFT_CHANNEL: StaticCell<FftChannelType> = StaticCell::new();
 
+/// Task that reads audio samples from I2S microphone via DMA.
+///
+/// This task runs on Core 0 and continuously:
+/// 1. Reads stereo I2S audio samples from the microphone using DMA circular buffer
+/// 2. Extracts mono samples from the stereo stream (left channel)
+/// 3. Buffers samples until a complete frame (1024 samples) is ready
+/// 4. Signals the audio processor task with the complete frame
+///
+/// # Arguments
+///
+/// * `i2s_rx` - I2S receiver instance configured for microphone input
+/// * `buffer` - DMA buffer for circular I2S transfers
+/// * `signal` - Embassy signal to notify audio processor of ready frames
+///
+/// # Hardware Configuration
+///
+/// Expected I2S configuration:
+/// - Standard: Philips
+/// - Data Format: Data16Channel16 (stereo 16-bit)
+/// - Sample Rate: 48kHz (configured in config.rs)
 #[task]
 pub async fn microphone_reader(
     mut i2s_rx: I2sRx<'static, Async>,
@@ -71,6 +100,27 @@ pub async fn microphone_reader(
     }
 }
 
+/// Task that processes audio frames and computes FFT.
+///
+/// This task runs on Core 0 and continuously:
+/// 1. Waits for audio frames from the microphone reader
+/// 2. Normalizes, windows, and computes FFT (1024-point real FFT)
+/// 3. Sends the 512-bin magnitude spectrum to Core 1 display task via channel
+///
+/// # Arguments
+///
+/// * `signal` - Embassy signal that receives audio frames from microphone reader
+/// * `fft_sender` - Embassy channel sender for transmitting FFT bins to Core 1
+///
+/// # Processing Pipeline
+///
+/// Each frame undergoes:
+/// 1. Normalization (i16 → f32)
+/// 2. Hann window application
+/// 3. 1024-point real FFT
+/// 4. Magnitude calculation (512 bins)
+///
+/// If the FFT channel is full, frames are dropped to maintain real-time performance.
 #[task]
 pub async fn audio_processor(
     signal: &'static Signal<CriticalSectionRawMutex, [i16; FFT_SIZE]>,

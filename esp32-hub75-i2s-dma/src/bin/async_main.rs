@@ -1,3 +1,34 @@
+//! Main entry point for the Totone ESP32-S3 music visualizer.
+//!
+//! This binary implements a dual-core audio spectrum analyzer that:
+//! 1. Reads audio from an I2S microphone (INMP441) on Core 0
+//! 2. Performs real-time FFT analysis on Core 0
+//! 3. Visualizes the spectrum on a HUB75 LED matrix on Core 1
+//!
+//! ## Architecture
+//!
+//! **Core 0 (Audio Processing):**
+//! - `microphone_reader` task: Reads I2S samples via DMA
+//! - `audio_processor` task: Performs FFT and sends bins to Core 1
+//!
+//! **Core 1 (Display & Visualization):**
+//! - `display_task`: Updates visualization from FFT data
+//! - `hub75_task`: Drives LED matrix via DMA
+//!
+//! ## Communication
+//!
+//! - Samples Signal: Core 0 microphone → Core 0 processor
+//! - FFT Channel: Core 0 processor → Core 1 display task
+//! - Framebuffer Signals: Core 1 display ↔ Core 1 hub75 (double buffering)
+//!
+//! ## Configuration
+//!
+//! Edit constants at the top of this file and `src/config.rs` to configure:
+//! - LED matrix dimensions (ROWS, COLS)
+//! - Bar width (BAR_WIDTH)
+//! - Bit depth (BITS)
+//! - Audio sample rate and FFT size
+
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
@@ -36,7 +67,7 @@ use esp_hub75::{
     Hub75Pins,
 };
 
-use micro_viz::BarGragh;
+use micro_viz::BarGraph;
 
 use embassy_sync::channel::Channel;
 use micro_dsp::process_frame;
@@ -44,10 +75,11 @@ use micromath::F32Ext;
 use static_cell::StaticCell;
 
 // Constants for LED matrix configuration
-const ROWS: usize = 64;
-const COLS: usize = 256;
-const BAR_WIDTH: u16 = 7;
-const BITS: u8 = 3;
+// Edit these to match your hardware setup
+const ROWS: usize = 64;        // Matrix height in pixels
+const COLS: usize = 256;       // Matrix width in pixels
+const BAR_WIDTH: u16 = 7;      // Width of each frequency bar in pixels
+const BITS: u8 = 3;            // Color bit depth (lower = faster refresh, fewer colors)
 const NROWS: usize = compute_rows(ROWS);
 const FRAME_COUNT: usize = compute_frame_count(BITS);
 const FPS_INTERVAL: Duration = Duration::from_secs(1);
@@ -77,7 +109,12 @@ type FrameBufferExchange = Signal<CriticalSectionRawMutex, &'static mut FBType>;
 type FftChannelType = Channel<CriticalSectionRawMutex, [f32; 512], FFT_CHANNEL_CAPACITY>;
 static FFT_CHANNEL: StaticCell<FftChannelType> = StaticCell::new();
 
-/// Collection of pins and peripherals for the Hub75 LED matrix
+/// Collection of pins and peripherals required for the HUB75 LED matrix.
+///
+/// This struct holds all GPIO pins and peripherals needed to drive a HUB75
+/// LED matrix panel via the LCD_CAM peripheral and DMA.
+///
+/// See `esp32-hub75-i2s-dma/README.md` for pin connection details.
 pub struct Hub75Peripherals<'d> {
     pub lcd_cam: LCD_CAM<'d>,
     pub dma_channel: esp_hal::dma::DmaChannel0<'d>,
@@ -97,7 +134,10 @@ pub struct Hub75Peripherals<'d> {
     pub latch: AnyPin<'d>,
 }
 
-//  Initialize the heap for dynamic memory allocation
+/// Initialize the heap for dynamic memory allocation.
+///
+/// Sets up a statically allocated heap region for use with `alloc`.
+/// This is required for libraries that use dynamic allocation (e.g., `Vec`).
 fn init_heap() {
     static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
 
@@ -154,6 +194,23 @@ fn create_hub75(peripherals: Hub75Peripherals<'static>) -> Hub75<'static, esp_ha
     .expect("failed to create Hub75!");
 }
 
+/// Display task that updates visualization from FFT data.
+///
+/// This task runs on Core 1 and continuously:
+/// 1. Receives FFT magnitude bins from the audio processor (Core 0) via channel
+/// 2. Updates the `BarGraph` visualization with new FFT data
+/// 3. Renders the bars to the framebuffer
+/// 4. Swaps framebuffers with `hub75_task` for double buffering
+///
+/// The task uses double buffering: while one framebuffer is being displayed
+/// by `hub75_task`, this task renders to the other buffer.
+///
+/// # Arguments
+///
+/// * `tx` - Signal to send rendered framebuffer to hub75_task
+/// * `rx` - Signal to receive empty framebuffer from hub75_task
+/// * `fb` - Initial framebuffer to render to
+/// * `fft_receiver` - Channel receiver for FFT bins from Core 0
 #[task]
 async fn display_task(
     tx: &'static FrameBufferExchange, // Swapped TX/RX names for clarity: TX to Hub75, RX from Hub75
@@ -168,7 +225,7 @@ async fn display_task(
 ) {
     info!("display_task: starting!");
 
-    let mut demo = BarGragh::new(COLS as u16, ROWS as u16, BAR_WIDTH); // Adjust params if needed
+    let mut demo = BarGraph::new(COLS as u16, ROWS as u16, BAR_WIDTH); // Adjust params if needed
     let mut count = 0u32;
     let mut start = Instant::now();
     let mut current_fft_data: [f32; 512] = [0.0; 512];
@@ -199,6 +256,22 @@ async fn display_task(
     }
 }
 
+/// Hub75 task that drives the LED matrix display via DMA.
+///
+/// This task runs on Core 1 and continuously:
+/// 1. Waits for rendered framebuffers from `display_task`
+/// 2. Drives the HUB75 LED matrix via DMA using the LCD_CAM peripheral
+/// 3. Returns empty framebuffers to `display_task` for double buffering
+///
+/// The task uses double buffering to ensure smooth updates: while one
+/// framebuffer is being displayed, the other is being rendered.
+///
+/// # Arguments
+///
+/// * `peripherals` - Hub75 pins and peripherals (LCD_CAM, DMA channel, GPIOs)
+/// * `tx_signal_from_display` - Signal to receive rendered framebuffers from display_task
+/// * `rx_signal_to_display` - Signal to send empty framebuffers to display_task
+/// * `fb` - Initial framebuffer for display
 #[task]
 async fn hub75_task(
     // Assuming you fixed this to accept the driver instance directly
@@ -306,6 +379,19 @@ extern "C" {
     static _stack_start_cpu0: u32;
 }
 
+/// Main entry point for the ESP32-S3 application.
+///
+/// Initializes hardware, creates tasks, and starts the dual-core execution.
+///
+/// # Setup Steps
+///
+/// 1. Initialize heap for dynamic allocation
+/// 2. Configure ESP32-S3 peripherals (clocks, timers, interrupts)
+/// 3. Setup I2S for microphone input
+/// 4. Initialize framebuffers and communication channels
+/// 5. Configure HUB75 pins and peripherals
+/// 6. Spawn tasks on Core 0 (audio processing)
+/// 7. Start Core 1 with display and hub75 tasks
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
     init_heap();

@@ -1,3 +1,10 @@
+//! Configuration constants for display, audio, and system settings.
+//!
+//! Edit these constants to configure:
+//! - LED matrix dimensions and bit depth
+//! - Audio sample rate and FFT size
+//! - Memory allocation and task timing
+
 use embassy_time::Duration;
 
 // --- Display Config ---

@@ -1,3 +1,30 @@
+#!/usr/bin/env python3
+"""
+bin_maker.py - Precomputed FFT Bin Index Generator
+
+Generates Rust constant arrays that map FFT bins to display bars.
+This precomputation improves runtime performance by avoiding dynamic
+bin range calculations on the embedded device.
+
+The script generates two types of bin distributions:
+1. Even distribution: Equal-width frequency bands
+2. Exponential distribution: Logarithmic frequency distribution (for better
+   visualization of low frequencies)
+
+Output format: Rust constant arrays that can be copied into source code.
+
+Usage:
+    python bin_maker.py > bin_indices.rs
+
+Configuration:
+    Edit USER_NUM_BARS and TOTAL_FFT_BINS_PARAM at the bottom of the script.
+
+Example:
+    For 8 bars from 512 FFT bins:
+    USER_NUM_BARS = 8
+    TOTAL_FFT_BINS_PARAM = 512
+"""
+
 import math
 
 def generate_bin_indices(num_bars, total_fft_bins_count):

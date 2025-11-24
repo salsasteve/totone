@@ -1,6 +1,35 @@
+//! # micro-viz
+//!
+//! A `no_std` compatible visualization library for embedded graphics displays.
+//!
+//! This library provides hardware-independent visualization components for real-time
+//! audio spectrum visualization. It implements animated bar graphs, color modes,
+//! and spectrum aggregation strategies using the `embedded-graphics` trait system.
+//!
+//! ## Components
+//!
+//! - **BarGraph**: Main visualization component for drawing frequency bars
+//! - **SpectralBandAggregator**: Maps FFT bins to display bars with configurable spread modes
+//! - **SpectrumValueAnimator**: Smoothly interpolates bar heights between FFT updates
+//! - **BinSummaryStrategy**: Strategies for aggregating FFT bins within frequency bands
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use micro_viz::BarGraph;
+//! use embedded_graphics::prelude::*;
+//!
+//! // Create a bar graph for a 256x64 display with 7px wide bars
+//! let mut bar_graph = BarGraph::new(256, 64, 7);
+//!
+//! // Update with FFT magnitude data (512 bins)
+//! let fft_bins: [f32; 512] = [/* ... */];
+//! bar_graph.update(&mut framebuffer, &fft_bins)?;
+//! ```
+
 #![no_std]
 extern crate alloc;
-use alloc::{vec, vec::Vec};
+use alloc::vec;
 
 use core::cmp; // Add this for cmp::max/min
 use embedded_graphics::{
@@ -26,6 +55,7 @@ use micromath::F32Ext;
 
 
 
+// Core modules
 pub mod spectral_band_aggregator; 
 pub use spectral_band_aggregator::*; 
 pub mod bin_summary_strategy;
@@ -33,16 +63,51 @@ pub use bin_summary_strategy::*;
 pub mod spectrum_value_animator;
 pub use spectrum_value_animator::*;
 
+// New modular components
+pub mod fft_provider;
+pub use fft_provider::*;
+pub mod scaling;
+pub use scaling::*;
+pub mod color_mode;
+pub use color_mode::*;
+pub mod renderer;
+pub use renderer::*;
+pub mod visualization_mode;
+pub use visualization_mode::*;
+pub mod effects;
+pub use effects::*;
+
+// Visualization mode implementations
+pub mod modes;
+pub use modes::*;
+
+// Main visualizer coordinator
+pub mod visualizer;
+pub use visualizer::*;
+
+/// Color modes for spectrum visualization.
+///
+/// Different modes provide various visual effects for the frequency bars.
 pub enum ColorMode {
+    /// Color wheel distribution across bars (rainbow effect)
     Spectrum,
+    /// Intensity-based grayscale gradient
     Gradient,
+    /// Fixed color palette cycling
     StaticPalette,
+    /// FFT magnitude-based dynamic colors
     DynamicFFT,
+    /// Animated color wheel that shifts over time
     ShiftingSpectrum,
 }
 
 
-pub struct BarGragh {
+/// Real-time audio spectrum visualizer using animated bar graphs.
+///
+/// This struct handles the visualization of FFT magnitude data as animated
+/// frequency bars on a display. It supports multiple color modes, smooth
+/// animation between updates, and configurable bin aggregation strategies.
+pub struct BarGraph {
     wheel_val: u8,
     step_counter: u32,
     screen_width: u16,
@@ -60,12 +125,32 @@ pub struct BarGragh {
     animator: SpectrumValueAnimator,
 }
 
-impl BarGragh {
+impl BarGraph {
+    /// Creates a new `BarGraph` visualizer.
+    ///
+    /// # Arguments
+    ///
+    /// * `screen_width` - Display width in pixels
+    /// * `screen_height` - Display height in pixels
+    /// * `bar_width` - Width of each frequency bar in pixels
+    ///
+    /// # Returns
+    ///
+    /// A new `BarGraph` instance configured for the given display dimensions.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use micro_viz::BarGraph;
+    ///
+    /// // Create a bar graph for a 256x64 LED matrix with 7px wide bars
+    /// let mut bar_graph = BarGraph::new(256, 64, 7);
+    /// ```
     pub fn new(screen_width: u16, screen_height: u16, bar_width: u16) -> Self {
         #[cfg(feature = "std")]
-        std::println!("BarGragh::new called with screen_width: {}, screen_height: {}, bar_width: {}", screen_width, screen_height, bar_width);
+        std::println!("BarGraph::new called with screen_width: {}, screen_height: {}, bar_width: {}", screen_width, screen_height, bar_width);
         #[cfg(feature = "logging")]
-        info!("BarGragh::new called with screen_width: {}, screen_height: {}, bar_width: {}", screen_width, screen_height, bar_width);
+        info!("BarGraph::new called with screen_width: {}, screen_height: {}, bar_width: {}", screen_width, screen_height, bar_width);
         let num_bars = (screen_width / (bar_width + BAR_SPACING as u16)).max(1) as usize;
         
         let sba = SpectralBandAggregator::new(512, num_bars, BandSpreadModeConfig::Exponential{exp_factor: 7.0});
@@ -134,13 +219,6 @@ impl BarGragh {
             // Get current height from the animator's display values
             let current_height_val = self.animator.get_current_values_display()[i];
             
-            // The y_line_coord should be screen_height - height, assuming 0,0 is top-left
-            // And bars grow upwards from the bottom.
-            // If y_line_coord was meant to be the height itself (from top):
-            let y_pos = self.screen_height.saturating_sub(current_height_val).saturating_sub(1);
-            let y_line_coord = cmp::max(0, y_pos) as i32;
-
-
             let bar_start_x = (i as u32 * (self.bar_width as u32 + BAR_SPACING)) as i32;
             let bar_end_x = bar_start_x + (self.bar_width as i32) - 1;
 
@@ -153,8 +231,10 @@ impl BarGragh {
             
             let color = self.apply_color_mode(current_height_val as f32, i);
             
-            // Draw line from bottom of screen up to current_height_val
-            // Assuming (x, screen_height-1) is bottom, (x, screen_height - 1 - height) is top of bar
+            // Draw bar from bottom of screen up to current_height_val
+            // (0,0) is top-left, so bars grow upwards from bottom
+            // Bottom coordinate: screen_height - 1
+            // Top coordinate: screen_height - height (clamped to 0)
             let y_bottom = (self.screen_height - 1) as i32;
             let y_top = (self.screen_height.saturating_sub(current_height_val).max(0)) as i32;
 
@@ -247,6 +327,37 @@ impl BarGragh {
         avg
     }
 
+    /// Updates the visualization with new FFT magnitude data and renders to the framebuffer.
+    ///
+    /// This is the main update loop that should be called once per frame. It:
+    /// 1. Updates the rolling max FFT value for dynamic scaling
+    /// 2. Calculates new target bar heights from FFT bins (when animator cycle starts)
+    /// 3. Updates the animator's interpolation state
+    /// 4. Draws the bars to the framebuffer
+    ///
+    /// # Arguments
+    ///
+    /// * `fb` - Mutable reference to the framebuffer (must implement `DrawTarget<Color = Rgb888>`)
+    /// * `bins` - Slice of FFT magnitude values (typically 512 bins)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Successfully updated and rendered
+    /// * `Err(D::Error)` - Drawing error from the framebuffer
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use micro_viz::BarGraph;
+    /// use embedded_graphics::prelude::*;
+    ///
+    /// let mut bar_graph = BarGraph::new(256, 64, 7);
+    /// let fft_bins: [f32; 512] = [/* ... magnitude spectrum ... */];
+    ///
+    /// // Update visualization (call once per frame)
+    /// bar_graph.update(&mut framebuffer, &fft_bins)?;
+    /// # Ok::<(), ()>(())
+    /// ```
     pub fn update<D>(&mut self, fb: &mut D, bins: &[f32]) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Rgb888>,
@@ -267,7 +378,7 @@ impl BarGragh {
         #[cfg(feature = "std")]
         {
              std::println!(
-                "BEGIN BarGragh UPDATE ------ Step Counter: {}", self.step_counter
+                "BEGIN BarGraph UPDATE ------ Step Counter: {}", self.step_counter
             );
              std::println!(
                 "Animator State: Counter={}, Steps={}, IsNewCycle={}",
@@ -333,14 +444,14 @@ impl BarGragh {
         fb.fill_solid(&fb.bounding_box(), BLACK)?; // Clear screen before drawing
         self.draw_bars(fb)?;
 
-        // Step 4: Update BarGragh's own non-animation counters/state
+        // Step 4: Update BarGraph's own non-animation counters/state
         self.wheel_val = self.wheel_val.wrapping_add(1);
         self.step_counter = self.step_counter.wrapping_add(1); // General frame counter
 
         #[cfg(feature = "std")]
         {
             std::println!(
-                "END BarGragh UPDATE ------ Next Animator Counter Potential: {}", self.animator.get_interpolation_counter()
+                "END BarGraph UPDATE ------ Next Animator Counter Potential: {}", self.animator.get_interpolation_counter()
             );
             std::println!("-----------------------------------------------------");
         }

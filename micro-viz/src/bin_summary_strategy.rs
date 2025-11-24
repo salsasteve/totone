@@ -1,8 +1,7 @@
-
-#![no_std]
 #[allow(unused_imports)] 
 use micromath::F32Ext;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BinSummaryStrategy {
     Average,         // Use the average value of the bins
     WeightedAverage, // Use a weighted average of the bins

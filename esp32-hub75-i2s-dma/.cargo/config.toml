@@ -1,16 +1,34 @@
+# Cargo configuration for ESP32-S3 target.
+#
+# This file configures:
+# - Flashing/debugging tool (probe-rs or espflash)
+# - Environment variables (defmt log level)
+# - Build settings (target, linker flags, std building)
+
+# Configure runner for cargo run/cargo test
+# probe-rs is the default flashing/debugging tool
 [target.xtensa-esp32s3-none-elf]
 runner = "probe-rs run --chip=esp32s3"
+# Alternative: Use espflash for flashing and serial monitor
 # runner = "espflash flash --monitor --baud 115200"
 
+# Environment variables for build/run
 [env]
+# Set defmt log level (trace, debug, info, warn, error)
 DEFMT_LOG="info"
 
+# Build configuration
 [build]
+# Linker flags required for ESP32-S3
+# -nostartfiles: Don't use default C runtime startup files
 rustflags = [
   "-C", "link-arg=-nostartfiles",
 ]
 
+# Target triple for ESP32-S3
 target = "xtensa-esp32s3-none-elf"
 
+# Unstable features required for ESP32-S3
+# build-std: Build core and alloc from source (required for no_std + alloc)
 [unstable]
 build-std = ["alloc", "core"]

@@ -1,4 +1,3 @@
-#![no_std]
 extern crate alloc;
 
 use alloc::{vec, vec::Vec};
@@ -16,43 +15,10 @@ pub enum BandSpreadModeConfig {
     Exponential { exp_factor: f32 },
 }
 
-pub const NUMBER_OF_BANDS_IN_512: u32 = 512;
-pub const NUMBER_OF_BANDS_IN_256: u32 = 256;
-pub const NUMBER_OF_BANDS_IN_128: u32 = 128;
-pub const NUMBER_OF_BANDS_IN_64: u32 = 64;
-pub const NUMBER_OF_BANDS_IN_32: u32 = 32;
-
-pub const NUMBER_OF_BANDS_OUT_64: u32 = 64;
-pub const NUMBER_OF_BANDS_OUT_32: u32 = 32;
-pub const NUMBER_OF_BANDS_OUT_16: u32 = 16;
-pub const NUMBER_OF_BANDS_OUT_8: u32 = 8;
-pub const NUMBER_OF_BANDS_OUT_4: u32 = 4;
-pub const NUMBER_OF_BANDS_OUT_2: u32 = 2;
-
-pub const VALID_BAND_SIZES_IN: [u32; 5] = [
-    NUMBER_OF_BANDS_IN_512,
-    NUMBER_OF_BANDS_IN_256,
-    NUMBER_OF_BANDS_IN_128,
-    NUMBER_OF_BANDS_IN_64,
-    NUMBER_OF_BANDS_IN_32,
-];
-
-pub const VALID_BAND_SIZES_OUT: [u32; 6] = [
-    NUMBER_OF_BANDS_OUT_64,
-    NUMBER_OF_BANDS_OUT_32,
-    NUMBER_OF_BANDS_OUT_16,
-    NUMBER_OF_BANDS_OUT_8,
-    NUMBER_OF_BANDS_OUT_4,
-    NUMBER_OF_BANDS_OUT_2,
-];
-
-pub fn is_valid_input_band_size(value: u32) -> bool {
-    VALID_BAND_SIZES_IN.contains(&value)
-}
-
-pub fn is_valid_output_band_size(value: u32) -> bool {
-    VALID_BAND_SIZES_OUT.contains(&value)
-}
+// Note: Removed restrictive band size constants to allow more flexibility.
+// The aggregator now accepts any reasonable input/output band sizes.
+// Common sizes include: 512, 256, 128, 64, 32 for input (FFT bins)
+// and any number for output (visualization elements).
 
 pub struct SpectralBandAggregator {
     active_band_ranges: Vec<(u16, u16)>,
@@ -64,21 +30,6 @@ impl SpectralBandAggregator {
         number_of_bands_out: usize,
         band_spread_config: BandSpreadModeConfig,
     ) -> Self {
-        if !is_valid_input_band_size(number_of_bands_in as u32) {
-            #[cfg(feature = "logging")]
-            info!(
-                "Invalid number of input bands: {}. Must be one of {:?}.",
-                number_of_bands_in, VALID_BAND_SIZES_IN
-            );
-        }
-        if !is_valid_output_band_size(number_of_bands_out as u32) {
-            #[cfg(feature = "logging")]
-            info!(
-                "Invalid number of output bands: {}. Must be one of {:?}.",
-                number_of_bands_out, VALID_BAND_SIZES_OUT
-            );
-            panic!("Invalid number of output bands");
-        }
         if number_of_bands_out == 0 {
             #[cfg(feature = "logging")]
             info!("Number of bands out must be greater than 0");
